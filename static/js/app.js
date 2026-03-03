@@ -17,10 +17,11 @@
   const today = new Date().toISOString().slice(0, 10);
 
   const state = {
-    orders:  [],
-    loading: false,
-    query:   { mode: "day", date: today, date_from: today, date_to: today },
-    panel:   { mode: null, order: null },
+    orders:       [],
+    loading:      false,
+    statusFilter: "all",
+    query:        { mode: "day", date: today, date_from: today, date_to: today },
+    panel:        { mode: null, order: null },
   };
 
   // ----------------------------------------------------------------
@@ -112,11 +113,19 @@
   // Render order table
   // ----------------------------------------------------------------
 
-  function statusBadgeClass(status = "") {
+  function statusCategory(status = "") {
     const s = status.toLowerCase();
-    if (s.includes("deliver") || s.includes("complet") || s.includes("collect")) return "badge-delivered";
-    if (s.includes("progress") || s.includes("transit") || s.includes("route") || s.includes("assign")) return "badge-progress";
-    if (s.includes("fail") || s.includes("cancel") || s.includes("reject") || s.includes("not")) return "badge-failed";
+    if (s.includes("deliver") || s.includes("complet") || s.includes("collect")) return "completed";
+    if (s.includes("progress") || s.includes("transit") || s.includes("route") || s.includes("assign")) return "progress";
+    if (s.includes("fail") || s.includes("cancel") || s.includes("reject") || s.includes("not")) return "failed";
+    return "unassigned";
+  }
+
+  function statusBadgeClass(status = "") {
+    const cat = statusCategory(status);
+    if (cat === "completed") return "badge-delivered";
+    if (cat === "progress")  return "badge-progress";
+    if (cat === "failed")    return "badge-failed";
     return "badge-status";
   }
 
@@ -140,8 +149,18 @@
       return;
     }
 
+    const visible = state.statusFilter === "all"
+      ? state.orders
+      : state.orders.filter(o => statusCategory(o.Status || "") === state.statusFilter);
+
+    if (!visible.length) {
+      tbody.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+
     empty.style.display = "none";
-    tbody.innerHTML = state.orders.map(o => {
+    tbody.innerHTML = visible.map(o => {
       const num    = o.Number || o.Id || "—";
       const client = o.Client || "—";
       const addr   = o.Address || "—";
@@ -739,6 +758,12 @@
       state.query.date = today;
       $("#filter-date").value = today;
       loadOrders();
+    });
+
+    // Status filter
+    $("#filter-status").addEventListener("change", function () {
+      state.statusFilter = this.value;
+      renderOrderList();
     });
 
     // Header actions

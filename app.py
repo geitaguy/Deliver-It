@@ -81,7 +81,15 @@ def list_orders():
     db.mark_orders_seen(order_numbers)
 
     viewed = db.get_viewed_set()
-    enriched = [{**o, "_new": o.get("Number", "") not in viewed} for o in orders]
+
+    def _is_completed(order: dict) -> bool:
+        status = (order.get("Status") or "").lower()
+        return any(s in status for s in ("deliver", "complet", "collect"))
+
+    enriched = [
+        {**o, "_new": o.get("Number", "") not in viewed and not _is_completed(o)}
+        for o in orders
+    ]
 
     return jsonify(enriched)
 
