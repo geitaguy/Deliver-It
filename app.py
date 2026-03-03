@@ -54,8 +54,8 @@ def list_orders():
 
     Query params (at least one date is recommended):
       date        YYYY-MM-DD  (single day; defaults to today if omitted)
-      date_from   YYYY-MM-DD  \  used together for a range
-      date_to     YYYY-MM-DD  /
+      date_from   YYYY-MM-DD  (used together for a range)
+      date_to     YYYY-MM-DD  (used together for a range)
     """
     client = _client()
 
