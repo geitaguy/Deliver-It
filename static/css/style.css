@@ -475,6 +475,39 @@ td {
 
 .detail-grid .full { grid-column: 1 / -1; }
 
+/* ---- Route sections in orders table ---- */
+
+tr.route-section-hdr > td {
+  background: var(--bg);
+  border-top: 2px solid var(--border);
+  padding: .4rem .75rem;
+}
+
+tr.route-section-hdr:hover > td { background: var(--bg); }
+tr.route-section-hdr { cursor: default; }
+
+.route-section-inner {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+}
+
+.route-section-name {
+  font-weight: 700;
+  font-size: .82rem;
+}
+
+.route-section-meta {
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+
+.badge-route-draft    { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.badge-route-ready    { background: var(--brand-light); color: var(--brand); }
+.badge-route-loaded   { background: var(--warn-light); color: var(--warn); }
+.badge-route-progress { background: #fef3c7; color: #b45309; }
+.badge-route-closed   { background: var(--success-light); color: var(--success); }
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {

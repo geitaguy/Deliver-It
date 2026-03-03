@@ -77,10 +77,13 @@
   <div class="card">
     <div class="card-header">
       <h2>Orders <span id="orders-date-label" style="font-weight:400;color:var(--text-muted);font-size:.8rem"></span></h2>
-      <p style="font-size:.72rem;color:var(--text-muted)">
-        Orders marked <strong style="color:var(--new-badge)">New</strong> originated in
-        Track-POD and have not yet been viewed here — click to action.
-      </p>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <p style="font-size:.72rem;color:var(--text-muted)">
+          Orders marked <strong style="color:var(--new-badge)">New</strong> originated in
+          Track-POD and have not yet been viewed here — click to action.
+        </p>
+        <button class="btn btn-outline btn-sm" id="new-route-btn" style="white-space:nowrap">+ New Route</button>
+      </div>
     </div>
     <div class="orders-wrap">
       <table>

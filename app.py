@@ -165,6 +165,62 @@ def mark_viewed(order_number: str):
 
 
 # ---------------------------------------------------------------------------
+# JSON API — Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/routes", methods=["GET"])
+def list_routes():
+    """List routes for a date. GET /api/routes?date=YYYY-MM-DD"""
+    date_str = request.args.get("date", date.today().isoformat())
+    client = _client()
+    try:
+        routes = client.get_routes_by_date(date_str)
+    except TrackPodError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    return jsonify(routes)
+
+
+@app.route("/api/routes", methods=["POST"])
+def create_route():
+    """Create a new route in Track-POD."""
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "Request body must be JSON."}), 400
+    client = _client()
+    try:
+        result = client.create_route(payload)
+    except TrackPodError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    return jsonify(result or {"success": True}), 201
+
+
+@app.route("/api/routes/<path:route_code>", methods=["PUT"])
+def update_route(route_code: str):
+    """Update a route by its code."""
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "Request body must be JSON."}), 400
+    client = _client()
+    try:
+        result = client.update_route(route_code, payload)
+    except TrackPodError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    return jsonify(result or {"success": True})
+
+
+@app.route("/api/routes/<path:route_code>/orders/<path:order_number>", methods=["PUT"])
+def assign_order_to_route(route_code: str, order_number: str):
+    """Assign an existing unscheduled order to a route."""
+    allow_transfer = request.args.get("allowTransfer", "false").lower() == "true"
+    client = _client()
+    try:
+        client.add_order_to_route(route_code, order_number, allow_transfer)
+    except TrackPodError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

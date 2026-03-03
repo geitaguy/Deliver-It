@@ -98,3 +98,25 @@ class TrackPodClient:
     def delete_order(self, number: str) -> None:
         """Delete an order by Number. DELETE /Order/Number/{number}"""
         self._request("DELETE", f"/Order/Number/{number}")
+
+    # ------------------------------------------------------------------
+    # Routes
+    # ------------------------------------------------------------------
+
+    def get_routes_by_date(self, route_date: str) -> list:
+        """Return all routes for a given date. GET /Route/Date/{date}"""
+        result = self._request("GET", f"/Route/Date/{route_date}")
+        return result if isinstance(result, list) else []
+
+    def create_route(self, payload: dict):
+        """Create a new route. POST /Route"""
+        return self._request("POST", "/Route", json=payload)
+
+    def update_route(self, code: str, payload: dict):
+        """Update a route by code. PUT /Route/Code/{code}"""
+        return self._request("PUT", f"/Route/Code/{code}", json=payload)
+
+    def add_order_to_route(self, route_code: str, order_number: str, allow_transfer: bool = False):
+        """Add an existing order to a route. PUT /Route/Code/{code}/Order/Number/{number}"""
+        params = {"allowTransfer": "true"} if allow_transfer else {}
+        return self._request("PUT", f"/Route/Code/{route_code}/Order/Number/{order_number}", params=params)

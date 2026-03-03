@@ -18,10 +18,11 @@
 
   const state = {
     orders:       [],
+    routes:       [],
     loading:      false,
     statusFilter: "all",
     query:        { mode: "day", date: today, date_from: today, date_to: today },
-    panel:        { mode: null, order: null },
+    panel:        { mode: null, order: null, route: null },
   };
 
   // ----------------------------------------------------------------
@@ -67,18 +68,24 @@
 
     const params = new URLSearchParams();
     const q = state.query;
+    let routeDate;
     if (q.mode === "range") {
       params.set("date_from", q.date_from);
       params.set("date_to",   q.date_to);
+      routeDate = q.date_from;
     } else {
       params.set("date", q.date);
+      routeDate = q.date;
     }
 
     try {
-      state.orders = await apiFetch(`/api/orders?${params}`);
-    } catch (err) {
-      toast(err.message, "error");
-      state.orders = [];
+      const [ordersResult, routesResult] = await Promise.allSettled([
+        apiFetch(`/api/orders?${params}`),
+        apiFetch(`/api/routes?date=${routeDate}`),
+      ]);
+      state.orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
+      state.routes = routesResult.status === "fulfilled" ? routesResult.value : [];
+      if (ordersResult.status === "rejected") toast(ordersResult.reason.message, "error");
     } finally {
       state.loading = false;
       renderOrderList();
@@ -129,6 +136,87 @@
     return "badge-status";
   }
 
+  function routeNameForDate(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const days   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+  }
+
+  function routeStatusBadgeClass(status = "") {
+    switch (status) {
+      case "Ready":      return "badge-route-ready";
+      case "Loaded":     return "badge-route-loaded";
+      case "InProgress": return "badge-route-progress";
+      case "Closed":     return "badge-route-closed";
+      default:           return "badge-route-draft";
+    }
+  }
+
+  function orderRowHTML(o) {
+    const num    = o.Number || o.Id || "—";
+    const client = o.Client || "—";
+    const addr   = o.Address || "—";
+    const dt     = formatDate(o.Date || o.RouteDate || "");
+    const status = o.Status || "Unassigned";
+    const isNew  = o._new;
+    return `<tr class="${isNew ? "is-new" : ""}" data-order="${escAttr(num)}" tabindex="0">
+      <td>${isNew ? '<span class="dot-new" title="Not yet viewed in Deliver-It"></span>' : ""}</td>
+      <td><strong>${escHtml(num)}</strong></td>
+      <td>${escHtml(client)}</td>
+      <td>${escHtml(addr)}</td>
+      <td>${escHtml(dt)}</td>
+      <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
+      <td>${isNew ? '<span class="badge badge-new"><span class="dot-new"></span>New</span>' : ""}</td>
+    </tr>`;
+  }
+
+  function groupByRoute(orders) {
+    const groups     = {};
+    const unassigned = [];
+    for (const o of orders) {
+      const rn = o.RouteNumber || null;
+      if (rn) {
+        if (!groups[rn]) groups[rn] = [];
+        groups[rn].push(o);
+      } else {
+        unassigned.push(o);
+      }
+    }
+    return { groups, unassigned };
+  }
+
+  function routeSectionHeaderHTML(code, route, count) {
+    const status = route ? (route.Status || "") : "";
+    const driver = route ? (route.DriverName || "") : "";
+    const meta   = [driver, `${count} order${count !== 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+    const badge  = status
+      ? `<span class="badge ${routeStatusBadgeClass(status)}">${escHtml(status)}</span>`
+      : "";
+    return `<tr class="route-section-hdr">
+      <td colspan="7">
+        <div class="route-section-inner">
+          <span class="route-section-name">${escHtml(code)}</span>
+          ${badge}
+          <span class="route-section-meta">${escHtml(meta)}</span>
+          <button class="btn btn-ghost btn-sm route-view-btn" data-route-code="${escAttr(code)}"
+                  style="margin-left:auto;font-size:.72rem">View</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  function unassignedSectionHeaderHTML(count) {
+    return `<tr class="route-section-hdr unassigned">
+      <td colspan="7">
+        <div class="route-section-inner">
+          <span class="route-section-name" style="color:var(--text-muted)">Unassigned</span>
+          <span class="route-section-meta">${count} order${count !== 1 ? "s" : ""}</span>
+        </div>
+      </td>
+    </tr>`;
+  }
+
   function renderOrderList() {
     const tbody = $("#orders-tbody");
     const empty = $("#orders-empty");
@@ -160,29 +248,40 @@
     }
 
     empty.style.display = "none";
-    tbody.innerHTML = visible.map(o => {
-      const num    = o.Number || o.Id || "—";
-      const client = o.Client || "—";
-      const addr   = o.Address || "—";
-      const dt     = formatDate(o.Date || o.RouteDate || "");
-      const status = o.Status || "Unassigned";
-      const isNew  = o._new;
 
-      return `<tr class="${isNew ? "is-new" : ""}" data-order="${escHtml(num)}" tabindex="0">
-        <td>${isNew ? '<span class="dot-new" title="Not yet viewed in Deliver-It"></span>' : ""}</td>
-        <td><strong>${escHtml(num)}</strong></td>
-        <td>${escHtml(client)}</td>
-        <td>${escHtml(addr)}</td>
-        <td>${escHtml(dt)}</td>
-        <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
-        <td>${isNew ? '<span class="badge badge-new"><span class="dot-new"></span>New</span>' : ""}</td>
-      </tr>`;
-    }).join("");
+    const { groups, unassigned } = groupByRoute(visible);
+    const routeCodes = Object.keys(groups).sort();
+
+    // Build Code → route object lookup from fetched routes
+    const routeMap = {};
+    for (const r of state.routes) {
+      if (r.Code) routeMap[r.Code] = r;
+    }
+
+    let html = "";
+    for (const code of routeCodes) {
+      html += routeSectionHeaderHTML(code, routeMap[code] || null, groups[code].length);
+      html += groups[code].map(orderRowHTML).join("");
+    }
+    if (unassigned.length) {
+      if (routeCodes.length > 0) html += unassignedSectionHeaderHTML(unassigned.length);
+      html += unassigned.map(orderRowHTML).join("");
+    }
+
+    tbody.innerHTML = html;
 
     $$("tbody tr[data-order]").forEach(row => {
       row.addEventListener("click", () => openOrderDetail(row.dataset.order));
       row.addEventListener("keydown", e => {
         if (e.key === "Enter" || e.key === " ") openOrderDetail(row.dataset.order);
+      });
+    });
+
+    $$("tbody .route-view-btn").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        const code = btn.dataset.routeCode;
+        openPanel("route-view", null, routeMap[code] || { Code: code });
       });
     });
   }
@@ -214,19 +313,19 @@
     updateNewCount();
   }
 
-  function openPanel(mode, order = null) {
-    state.panel = { mode, order };
+  function openPanel(mode, order = null, route = null) {
+    state.panel = { mode, order, route };
     renderPanel();
     $("#overlay").classList.add("open");
   }
 
   function closePanel() {
-    state.panel = { mode: null, order: null };
+    state.panel = { mode: null, order: null, route: null };
     $("#overlay").classList.remove("open");
   }
 
   function renderPanel() {
-    const { mode, order } = state.panel;
+    const { mode, order, route } = state.panel;
     const header = $("#panel-header");
     const body   = $("#panel-body");
     const footer = $("#panel-footer");
@@ -242,6 +341,12 @@
       renderViewPanel(order, header, body, footer);
     } else if (mode === "edit") {
       renderEditForm(order, header, body, footer);
+    } else if (mode === "route-view") {
+      renderRouteViewPanel(route, header, body, footer);
+    } else if (mode === "route-create") {
+      renderRouteCreateForm(header, body, footer);
+    } else if (mode === "route-edit") {
+      renderRouteEditForm(route, header, body, footer);
     }
 
     // Wire close buttons (any .close-panel-btn)
@@ -365,6 +470,232 @@
         ${detailField("First Seen",   meta.first_seen_at)}
         ${detailField("First Viewed", meta.first_viewed_at || "—")}
       </div></div>`;
+  }
+
+  // ---- Route panels ----
+
+  function renderRouteViewPanel(route, header, body, footer) {
+    const code   = route.Code || "—";
+    const status = route.Status || "";
+    header.innerHTML = `
+      <div>
+        <h2>${escHtml(code)}</h2>
+        ${status ? `<span class="badge ${routeStatusBadgeClass(status)}" style="margin-top:.25rem">${escHtml(status)}</span>` : ""}
+      </div>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
+
+    const unassigned = state.orders.filter(o => !o.RouteNumber);
+    body.innerHTML = `
+      <div class="section-title">Route Details</div>
+      <div class="detail-grid">
+        ${detailField("Route Code",    code)}
+        ${detailField("Date",          formatDate(route.Date || ""))}
+        ${detailField("Driver",        route.DriverName)}
+        ${detailField("Vehicle",       route.DriverVehicle)}
+        ${detailField("Depot",         route.Depot)}
+        ${detailField("Planned Start", route.StartTimePlan ? String(route.StartTimePlan).replace(/^(\d{4}-\d{2}-\d{2}T)/, "").slice(0, 5) : null)}
+      </div>
+      ${unassigned.length ? `
+        <div class="section-title" style="margin-top:1.25rem">Add Unassigned Orders</div>
+        <div>
+          ${unassigned.map(o => {
+            const num = o.Number || o.Id || "—";
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.45rem 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:.8rem">
+                <strong>${escHtml(num)}</strong>
+                <span style="color:var(--text-muted);margin-left:.35rem">${escHtml(o.Client || "")}</span>
+              </span>
+              <button class="btn btn-outline btn-sm add-to-route-btn"
+                      data-order-num="${escAttr(num)}" data-route-code="${escAttr(code)}"
+                      style="flex-shrink:0">Add →</button>
+            </div>`;
+          }).join("")}
+        </div>
+      ` : `<p style="margin-top:1rem;font-size:.8rem;color:var(--text-muted)">All orders are assigned to routes.</p>`}`;
+
+    footer.innerHTML = `
+      <button class="btn btn-outline btn-sm close-panel-btn">Close</button>
+      <button class="btn btn-primary btn-sm" id="edit-route-btn">Edit Route</button>`;
+
+    $$(".add-to-route-btn").forEach(btn => {
+      btn.addEventListener("click", () =>
+        assignOrderToRoute(btn.dataset.routeCode, btn.dataset.orderNum, btn));
+    });
+    $("#edit-route-btn").addEventListener("click", () => openPanel("route-edit", null, route));
+  }
+
+  function renderRouteCreateForm(header, body, footer) {
+    const baseDate   = state.query.mode === "range" ? state.query.date_from : state.query.date;
+    const defaultName = routeNameForDate(baseDate);
+
+    header.innerHTML = `<h2>New Route</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
+
+    body.innerHTML = `
+      <div class="section-title">Route Details</div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Route Name<span class="required">*</span></label>
+          <div style="display:flex;gap:.5rem">
+            <input type="text" id="r-name-base" value="${escAttr(defaultName)}" readonly
+                   style="flex:0 0 auto;width:auto;background:var(--bg)">
+            <input type="text" id="r-name-suffix" placeholder="Suffix — e.g. Run 2, Northside" style="flex:1">
+          </div>
+          <span style="font-size:.68rem;color:var(--text-muted)">
+            Full code: <strong id="r-code-preview">${escHtml(defaultName)}</strong>
+          </span>
+        </div>
+        <div class="form-group">
+          <label>Date<span class="required">*</span></label>
+          <input type="date" id="r-date" value="${escAttr(baseDate)}">
+        </div>
+        <div class="form-group">
+          <label>Planned Start</label>
+          <input type="time" id="r-start-time">
+        </div>
+        <div class="form-group">
+          <label>Driver Name</label>
+          <input type="text" id="r-driver">
+        </div>
+        <div class="form-group">
+          <label>Vehicle</label>
+          <input type="text" id="r-vehicle" placeholder="Plate number">
+        </div>
+        <div class="form-group full">
+          <label>Depot / Start Address</label>
+          <input type="text" id="r-depot">
+        </div>
+      </div>`;
+
+    footer.innerHTML = `
+      <button class="btn btn-outline btn-sm close-panel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="save-route-btn">Create Route</button>`;
+
+    function updatePreview() {
+      const base   = $("#r-name-base").value.trim();
+      const suffix = $("#r-name-suffix").value.trim();
+      $("#r-code-preview").textContent = suffix ? `${base} ${suffix}` : base;
+    }
+    $("#r-name-suffix").addEventListener("input", updatePreview);
+    $("#r-date").addEventListener("change", function () {
+      if (this.value) { $("#r-name-base").value = routeNameForDate(this.value); updatePreview(); }
+    });
+    $("#save-route-btn").addEventListener("click", submitCreateRoute);
+  }
+
+  async function submitCreateRoute() {
+    const base   = $("#r-name-base").value.trim();
+    const suffix = $("#r-name-suffix").value.trim();
+    const code   = suffix ? `${base} ${suffix}` : base;
+    if (!code) { toast("Route name is required.", "error"); return; }
+    const dateVal = $("#r-date").value;
+    if (!dateVal) { toast("Date is required.", "error"); return; }
+
+    const payload = { Code: code, Date: dateVal };
+    const driver  = $("#r-driver").value.trim();       if (driver)  payload.DriverName   = driver;
+    const vehicle = $("#r-vehicle").value.trim();      if (vehicle) payload.DriverVehicle = vehicle;
+    const depot   = $("#r-depot").value.trim();        if (depot)   payload.Depot         = depot;
+    const start   = $("#r-start-time").value;          if (start)   payload.StartTimePlan = start;
+
+    const btn = $("#save-route-btn");
+    btn.disabled = true; btn.textContent = "Creating…";
+    try {
+      await apiFetch("/api/routes", { method: "POST", body: JSON.stringify(payload) });
+      toast("Route created.", "success");
+      closePanel();
+      loadOrders();
+    } catch (err) {
+      toast(err.message, "error");
+      btn.disabled = false; btn.textContent = "Create Route";
+    }
+  }
+
+  function renderRouteEditForm(route, header, body, footer) {
+    const code = route.Code || "";
+    header.innerHTML = `<h2>Edit ${escHtml(code)}</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
+
+    const startVal = (() => {
+      const s = route.StartTimePlan || "";
+      if (!s) return "";
+      const t = s.indexOf("T");
+      return t >= 0 ? s.slice(t + 1, t + 6) : s.slice(0, 5);
+    })();
+
+    body.innerHTML = `
+      <div class="section-title">Route Details</div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Route Code</label>
+          <input type="text" value="${escAttr(code)}" readonly style="background:var(--bg)">
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="r-date" value="${escAttr(isoDate(route.Date || ""))}">
+        </div>
+        <div class="form-group">
+          <label>Planned Start</label>
+          <input type="time" id="r-start-time" value="${escAttr(startVal)}">
+        </div>
+        <div class="form-group">
+          <label>Driver Name</label>
+          <input type="text" id="r-driver" value="${escAttr(route.DriverName || "")}">
+        </div>
+        <div class="form-group">
+          <label>Vehicle</label>
+          <input type="text" id="r-vehicle" value="${escAttr(route.DriverVehicle || "")}">
+        </div>
+        <div class="form-group full">
+          <label>Depot / Start Address</label>
+          <input type="text" id="r-depot" value="${escAttr(route.Depot || "")}">
+        </div>
+      </div>`;
+
+    footer.innerHTML = `
+      <button class="btn btn-outline btn-sm" id="back-route-btn">← Back</button>
+      <button class="btn btn-primary btn-sm" id="save-route-btn">Save Changes</button>`;
+
+    $("#back-route-btn").addEventListener("click", () => openPanel("route-view", null, route));
+    $("#save-route-btn").addEventListener("click", () => submitEditRoute(code));
+  }
+
+  async function submitEditRoute(code) {
+    const payload = {};
+    const dateVal = $("#r-date").value;        if (dateVal) payload.Date          = dateVal;
+    const driver  = $("#r-driver").value.trim();  if (driver)  payload.DriverName   = driver;
+    const vehicle = $("#r-vehicle").value.trim(); if (vehicle) payload.DriverVehicle = vehicle;
+    const depot   = $("#r-depot").value.trim();   if (depot)   payload.Depot         = depot;
+    const start   = $("#r-start-time").value;     if (start)   payload.StartTimePlan = start;
+
+    const btn = $("#save-route-btn");
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      await apiFetch(`/api/routes/${encodeURIComponent(code)}`,
+        { method: "PUT", body: JSON.stringify(payload) });
+      toast("Route updated.", "success");
+      closePanel();
+      loadOrders();
+    } catch (err) {
+      toast(err.message, "error");
+      btn.disabled = false; btn.textContent = "Save Changes";
+    }
+  }
+
+  async function assignOrderToRoute(routeCode, orderNumber, btn) {
+    const origText = btn.textContent;
+    btn.disabled = true; btn.textContent = "Adding…";
+    try {
+      await apiFetch(
+        `/api/routes/${encodeURIComponent(routeCode)}/orders/${encodeURIComponent(orderNumber)}`,
+        { method: "PUT" }
+      );
+      toast(`Order ${orderNumber} added to route.`, "success");
+      closePanel();
+      loadOrders();
+    } catch (err) {
+      toast(err.message, "error");
+      btn.disabled = false; btn.textContent = origText;
+    }
   }
 
   // ---- Create form ----
@@ -768,6 +1099,7 @@
 
     // Header actions
     $("#refresh-btn").addEventListener("click", loadOrders);
+    $("#new-route-btn").addEventListener("click", () => openPanel("route-create"));
     $("#new-order-btn").addEventListener("click", () => openPanel("create"));
 
     // Close panel on overlay click
