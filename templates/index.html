@@ -15,9 +15,9 @@
     <h1>Deliver-It <span class="subtitle">powered by Track-POD</span></h1>
   </div>
   <div class="header-actions">
-    <span class="badge badge-new" id="new-count" style="display:none;gap:.35rem">
+    <span class="badge badge-new" id="new-count-badge" style="display:none;gap:.35rem">
       <span class="dot-new"></span>
-      <span id="new-count"></span>
+      <span id="new-count-label"></span>
     </span>
     <button class="btn btn-outline btn-sm" id="refresh-btn" style="color:#fff;border-color:rgba(255,255,255,.4)">
       ↻ Refresh
@@ -32,32 +32,33 @@
 <!-- ====== Main Content ====== -->
 <main class="container">
 
-  <!-- Filters -->
+  <!-- Date navigation + filters -->
   <div class="card" style="margin-bottom:1.25rem">
     <div class="filters">
       <div class="filter-group">
-        <label for="filter-from">Date From</label>
-        <input type="date" id="filter-from">
-      </div>
-      <div class="filter-group">
-        <label for="filter-to">Date To</label>
-        <input type="date" id="filter-to">
-      </div>
-      <div class="filter-group">
-        <label for="filter-status">Status</label>
-        <select id="filter-status" style="min-width:130px">
-          <option value="">All statuses</option>
-          <option value="Unassigned">Unassigned</option>
-          <option value="Assigned">Assigned</option>
-          <option value="InProgress">In Progress</option>
-          <option value="Arrived">Arrived</option>
-          <option value="Delivered">Delivered</option>
-          <option value="Failed">Failed</option>
+        <label>View</label>
+        <select id="filter-mode" style="min-width:110px">
+          <option value="day">Single day</option>
+          <option value="range">Date range</option>
         </select>
       </div>
+      <div class="filter-group" id="filter-day-wrap">
+        <label for="filter-date">Date</label>
+        <input type="date" id="filter-date">
+      </div>
+      <div class="filter-group" id="filter-range-from-wrap" style="display:none">
+        <label for="filter-from">From</label>
+        <input type="date" id="filter-from">
+      </div>
+      <div class="filter-group" id="filter-range-to-wrap" style="display:none">
+        <label for="filter-to">To</label>
+        <input type="date" id="filter-to">
+      </div>
       <div style="display:flex;gap:.5rem;align-items:flex-end;margin-left:auto">
-        <button class="btn btn-outline btn-sm" id="clear-filters">Clear</button>
-        <button class="btn btn-primary btn-sm" id="apply-filters">Apply</button>
+        <button class="btn btn-ghost btn-sm" id="prev-day" title="Previous day">←</button>
+        <button class="btn btn-ghost btn-sm" id="today-btn">Today</button>
+        <button class="btn btn-ghost btn-sm" id="next-day" title="Next day">→</button>
+        <button class="btn btn-primary btn-sm" id="apply-filters" style="margin-left:.25rem">Load</button>
       </div>
     </div>
   </div>
@@ -65,7 +66,7 @@
   <!-- Orders Table -->
   <div class="card">
     <div class="card-header">
-      <h2>Orders</h2>
+      <h2>Orders <span id="orders-date-label" style="font-weight:400;color:var(--text-muted);font-size:.8rem"></span></h2>
       <p style="font-size:.72rem;color:var(--text-muted)">
         Orders marked <strong style="color:var(--new-badge)">New</strong> originated in
         Track-POD and have not yet been viewed here — click to action.
@@ -77,8 +78,8 @@
           <tr>
             <th style="width:18px"></th>
             <th>Order #</th>
+            <th>Client</th>
             <th>Address</th>
-            <th>Contact</th>
             <th>Date</th>
             <th>Status</th>
             <th style="width:80px"></th>
@@ -98,7 +99,7 @@
     </div>
     <div id="orders-empty" class="state-msg" style="display:none">
       <div class="icon">📭</div>
-      <div>No orders found. Adjust the filters or create a new order.</div>
+      <div>No orders found for this date.</div>
     </div>
   </div>
 
@@ -107,15 +108,9 @@
 <!-- ====== Slide-over panel ====== -->
 <div class="overlay" id="overlay">
   <div class="slide-panel" role="dialog" aria-modal="true">
-    <div class="panel-header" id="panel-header">
-      <!-- Populated by JS -->
-    </div>
-    <div class="panel-body" id="panel-body">
-      <!-- Populated by JS -->
-    </div>
-    <div class="panel-footer" id="panel-footer">
-      <!-- Populated by JS -->
-    </div>
+    <div class="panel-header" id="panel-header"></div>
+    <div class="panel-body"   id="panel-body"></div>
+    <div class="panel-footer" id="panel-footer"></div>
   </div>
 </div>
 

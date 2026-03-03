@@ -1,14 +1,15 @@
 """
 Deliver-It — Flask web application for managing Track-POD orders.
 
-Track-POD is the source of truth.  This app:
-  • Fetches orders from Track-POD and surfaces them in a browser UI.
+Track-POD is the source of truth. This app:
+  • Fetches orders from Track-POD by date and surfaces them in a browser UI.
   • Highlights orders that originated in Track-POD and have not yet been
     viewed / actioned inside Deliver-It.
   • Allows creating and updating orders via the Track-POD API.
 """
 
 import os
+from datetime import date
 from flask import Flask, jsonify, render_template, request, abort
 from dotenv import load_dotenv
 
@@ -27,10 +28,6 @@ def _client() -> TrackPodClient:
         abort(503, description="TRACK_POD_API_KEY is not configured.")
     return TrackPodClient(api_key)
 
-
-# ---------------------------------------------------------------------------
-# Initialise DB on first request
-# ---------------------------------------------------------------------------
 
 with app.app_context():
     db.init_db()
@@ -52,49 +49,46 @@ def index():
 @app.route("/api/orders", methods=["GET"])
 def list_orders():
     """
-    Fetch orders from Track-POD, merge with local view-tracking metadata,
-    and flag orders that have never been viewed inside Deliver-It.
+    Fetch orders from Track-POD for a date or date range, merge with local
+    view-tracking metadata, and flag orders not yet viewed in Deliver-It.
 
-    Query params (all optional):
-      date_from   YYYY-MM-DD
-      date_to     YYYY-MM-DD
-      status      e.g. Unassigned / InProgress / Delivered
-      page        integer (default 1)
-      page_size   integer (default 50)
+    Query params (at least one date is recommended):
+      date        YYYY-MM-DD  (single day; defaults to today if omitted)
+      date_from   YYYY-MM-DD  \  used together for a range
+      date_to     YYYY-MM-DD  /
     """
     client = _client()
 
+    date_from = request.args.get("date_from")
+    date_to   = request.args.get("date_to")
+    single    = request.args.get("date")
+
     try:
-        orders = client.get_orders(
-            date_from=request.args.get("date_from"),
-            date_to=request.args.get("date_to"),
-            status=request.args.get("status"),
-            page=int(request.args.get("page", 1)),
-            page_size=int(request.args.get("page_size", 50)),
-        )
+        if date_from and date_to:
+            orders = client.get_orders_for_range(date_from, date_to)
+        elif date_from:
+            orders = client.get_orders_by_date(date_from)
+        elif date_to:
+            orders = client.get_orders_by_date(date_to)
+        elif single:
+            orders = client.get_orders_by_date(single)
+        else:
+            orders = client.get_orders_by_date(date.today().isoformat())
     except TrackPodError as exc:
         return jsonify({"error": exc.message}), exc.status_code
 
-    # Persist the fact that we saw these orders
-    order_numbers = [_order_number(o) for o in orders if _order_number(o)]
+    order_numbers = [o.get("Number", "") for o in orders if o.get("Number")]
     db.mark_orders_seen(order_numbers)
 
     viewed = db.get_viewed_set()
-
-    enriched = []
-    for order in orders:
-        num = _order_number(order)
-        enriched.append({
-            **order,
-            "_new": num not in viewed,  # True → originated in Track-POD, not yet actioned here
-        })
+    enriched = [{**o, "_new": o.get("Number", "") not in viewed} for o in orders]
 
     return jsonify(enriched)
 
 
-@app.route("/api/orders/<order_number>", methods=["GET"])
+@app.route("/api/orders/<path:order_number>", methods=["GET"])
 def get_order(order_number: str):
-    """Fetch a single order from Track-POD and mark it as viewed."""
+    """Fetch a single order by Number and mark it as viewed."""
     client = _client()
     try:
         order = client.get_order(order_number)
@@ -110,11 +104,9 @@ def get_order(order_number: str):
 @app.route("/api/orders", methods=["POST"])
 def create_order():
     """
-    Create a new order in Track-POD.
+    Create a new order in Track-POD. POST /Order
 
-    Expects a JSON body matching Track-POD's order creation schema.
-    Required fields (minimum): OrderNumber, Address1, City, ContactName,
-    DeliveryDate.
+    Required fields (enforced by Track-POD): Client, Address.
     """
     payload = request.get_json(force=True, silent=True)
     if not payload:
@@ -126,9 +118,7 @@ def create_order():
     except TrackPodError as exc:
         return jsonify({"error": exc.message}), exc.status_code
 
-    # If Track-POD echoes the created order, mark it viewed immediately
-    # (we created it here, so it's not "new from Track-POD").
-    order_number = payload.get("OrderNumber") or _order_number(result or {})
+    order_number = payload.get("Number") or _extract_number(result or {})
     if order_number:
         db.mark_orders_seen([order_number])
         db.mark_order_viewed(order_number)
@@ -136,16 +126,22 @@ def create_order():
     return jsonify(result or {"success": True}), 201
 
 
-@app.route("/api/orders/<order_number>", methods=["PUT"])
+@app.route("/api/orders/<path:order_number>", methods=["PUT"])
 def update_order(order_number: str):
-    """Update an existing order in Track-POD."""
+    """
+    Update an existing order. PUT /Order
+    The Number field in the body identifies the order.
+    """
     payload = request.get_json(force=True, silent=True)
     if not payload:
         return jsonify({"error": "Request body must be JSON."}), 400
 
+    # Ensure the Number in the body matches the URL so the right record is updated
+    payload["Number"] = order_number
+
     client = _client()
     try:
-        result = client.update_order(order_number, payload)
+        result = client.update_order(payload)
     except TrackPodError as exc:
         return jsonify({"error": exc.message}), exc.status_code
 
@@ -153,37 +149,19 @@ def update_order(order_number: str):
     return jsonify(result or {"success": True})
 
 
-@app.route("/api/orders/<order_number>/viewed", methods=["POST"])
+@app.route("/api/orders/<path:order_number>/viewed", methods=["POST"])
 def mark_viewed(order_number: str):
-    """Mark an order as viewed/actioned without fetching its full detail."""
+    """Mark an order as viewed without fetching its full detail."""
     db.mark_order_viewed(order_number)
     return jsonify({"success": True})
-
-
-# ---------------------------------------------------------------------------
-# JSON API — Drivers (supporting data for the order form)
-# ---------------------------------------------------------------------------
-
-@app.route("/api/drivers", methods=["GET"])
-def list_drivers():
-    client = _client()
-    try:
-        drivers = client.get_drivers()
-    except TrackPodError as exc:
-        return jsonify({"error": exc.message}), exc.status_code
-    return jsonify(drivers)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _order_number(order: dict) -> str | None:
-    """Extract the order number regardless of Track-POD's casing."""
-    for key in ("OrderNumber", "orderNumber", "order_number", "Number", "number"):
-        if key in order:
-            return str(order[key])
-    return None
+def _extract_number(order: dict) -> str | None:
+    return order.get("Number") or order.get("Id") or None
 
 
 # ---------------------------------------------------------------------------

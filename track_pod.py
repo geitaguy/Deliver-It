@@ -1,19 +1,19 @@
 """
 Track-POD API client.
 
-All requests are authenticated via the X-API-Key header.
+Authentication: X-API-KEY header.
 Base URL: https://api.track-pod.com
+Rate limits: 20 req/s, 400 req/min.
 """
 
 import requests
+from datetime import date, timedelta
 from typing import Optional
 
 BASE_URL = "https://api.track-pod.com"
 
 
 class TrackPodError(Exception):
-    """Raised when the Track-POD API returns an error."""
-
     def __init__(self, status_code: int, message: str):
         self.status_code = status_code
         self.message = message
@@ -24,7 +24,7 @@ class TrackPodClient:
     def __init__(self, api_key: str):
         self.session = requests.Session()
         self.session.headers.update({
-            "X-API-Key": api_key,
+            "X-API-KEY": api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
@@ -46,65 +46,55 @@ class TrackPodClient:
     # Orders
     # ------------------------------------------------------------------
 
-    def get_orders(
-        self,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
-        status: Optional[str] = None,
-        page: int = 1,
-        page_size: int = 50,
-    ) -> list:
+    def get_orders_by_date(self, order_date: str) -> list:
         """
-        Return a list of orders.
-
-        date_from / date_to: ISO-8601 date strings, e.g. "2024-01-01"
-        status: e.g. "Unassigned", "InProgress", "Delivered", ...
+        Return all orders for a given date (yyyy-MM-dd).
+        Uses GET /Order/Date/{date}.
         """
-        params: dict = {"page": page, "pageSize": page_size}
-        if date_from:
-            params["dateFrom"] = date_from
-        if date_to:
-            params["dateTo"] = date_to
-        if status:
-            params["status"] = status
+        result = self._request("GET", f"/Order/Date/{order_date}")
+        return result if isinstance(result, list) else []
 
-        result = self._request("GET", "/order", params=params)
-        # The API may return a list directly or wrap it in a key
-        if isinstance(result, list):
-            return result
-        if isinstance(result, dict):
-            for key in ("orders", "Orders", "data", "Data", "items", "Items"):
-                if key in result:
-                    return result[key]
-        return result or []
+    def get_orders_for_range(self, date_from: str, date_to: str) -> list:
+        """
+        Fetch orders across a date range by iterating daily (max 31 days).
+        date_from / date_to: 'yyyy-MM-dd'
+        """
+        start = date.fromisoformat(date_from)
+        end   = date.fromisoformat(date_to)
+        if (end - start).days > 30:
+            end = start + timedelta(days=30)
 
-    def get_order(self, order_number: str) -> dict:
-        """Return a single order by its order number."""
-        return self._request("GET", f"/order/{order_number}")
+        orders = []
+        seen = set()
+        current = start
+        while current <= end:
+            day_orders = self.get_orders_by_date(current.isoformat())
+            for o in day_orders:
+                num = o.get("Number") or o.get("Id") or ""
+                if num not in seen:
+                    seen.add(num)
+                    orders.append(o)
+            current += timedelta(days=1)
+        return orders
+
+    def get_order(self, number: str) -> dict:
+        """Return a single order by its Number. GET /Order/Number/{number}"""
+        return self._request("GET", f"/Order/Number/{number}")
 
     def create_order(self, payload: dict) -> dict:
-        """Create a new order. Returns the created order object."""
-        return self._request("POST", "/order", json=[payload])
+        """
+        Create a new unscheduled order. POST /Order
+        Required fields: Client, Address.
+        """
+        return self._request("POST", "/Order", json=payload)
 
-    def update_order(self, order_number: str, payload: dict) -> dict:
-        """Update an existing order."""
-        return self._request("PUT", f"/order/{order_number}", json=payload)
+    def update_order(self, payload: dict) -> dict:
+        """
+        Update an existing order. PUT /Order
+        The order is identified by Number (or Id) inside the payload.
+        """
+        return self._request("PUT", "/Order", json=payload)
 
-    def delete_order(self, order_number: str) -> None:
-        """Delete an order (only allowed until Arrived status)."""
-        self._request("DELETE", f"/order/{order_number}")
-
-    # ------------------------------------------------------------------
-    # Drivers (useful for assigning orders)
-    # ------------------------------------------------------------------
-
-    def get_drivers(self) -> list:
-        """Return all drivers."""
-        result = self._request("GET", "/driver")
-        if isinstance(result, list):
-            return result
-        if isinstance(result, dict):
-            for key in ("drivers", "Drivers", "data", "Data"):
-                if key in result:
-                    return result[key]
-        return result or []
+    def delete_order(self, number: str) -> None:
+        """Delete an order by Number. DELETE /Order/Number/{number}"""
+        self._request("DELETE", f"/Order/Number/{number}")

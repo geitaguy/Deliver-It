@@ -1,5 +1,10 @@
 /* ============================================================
    Deliver-It — frontend application
+   Track-POD field reference:
+     Number, Client, Address, Date, TimeSlotFrom, TimeSlotTo,
+     ContactName, Phone, Email, Note, Weight, Volume, Pallets,
+     Status, StatusId, RouteDate, DriverName, GoodsList[]
+       └─ GoodsName, Quantity, GoodsUnit, Note
    ============================================================ */
 
 (function () {
@@ -9,30 +14,31 @@
   // State
   // ----------------------------------------------------------------
 
+  const today = new Date().toISOString().slice(0, 10);
+
   const state = {
-    orders: [],
+    orders:  [],
     loading: false,
-    filters: { date_from: "", date_to: "", status: "" },
-    panel: { mode: null, order: null },   // mode: 'view' | 'edit' | 'create'
+    query:   { mode: "day", date: today, date_from: today, date_to: today },
+    panel:   { mode: null, order: null },
   };
 
   // ----------------------------------------------------------------
-  // DOM refs
+  // DOM helpers
   // ----------------------------------------------------------------
 
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
   // ----------------------------------------------------------------
-  // Toast notifications
+  // Toast
   // ----------------------------------------------------------------
 
   function toast(message, type = "info") {
-    const container = $("#toast");
     const el = document.createElement("div");
     el.className = `toast-msg ${type}`;
     el.textContent = message;
-    container.appendChild(el);
+    $("#toast").appendChild(el);
     setTimeout(() => el.remove(), 3500);
   }
 
@@ -46,15 +52,12 @@
       ...options,
     });
     const body = await res.json().catch(() => null);
-    if (!res.ok) {
-      const msg = body?.error || `HTTP ${res.status}`;
-      throw new Error(msg);
-    }
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
     return body;
   }
 
   // ----------------------------------------------------------------
-  // Order list
+  // Load orders
   // ----------------------------------------------------------------
 
   async function loadOrders() {
@@ -62,9 +65,13 @@
     renderOrderList();
 
     const params = new URLSearchParams();
-    if (state.filters.date_from) params.set("date_from", state.filters.date_from);
-    if (state.filters.date_to)   params.set("date_to",   state.filters.date_to);
-    if (state.filters.status)    params.set("status",    state.filters.status);
+    const q = state.query;
+    if (q.mode === "range") {
+      params.set("date_from", q.date_from);
+      params.set("date_to",   q.date_to);
+    } else {
+      params.set("date", q.date);
+    }
 
     try {
       state.orders = await apiFetch(`/api/orders?${params}`);
@@ -75,25 +82,41 @@
       state.loading = false;
       renderOrderList();
       updateNewCount();
+      updateDateLabel();
     }
   }
 
   function updateNewCount() {
     const count = state.orders.filter(o => o._new).length;
-    const badge = $("#new-count");
+    const badge = $("#new-count-badge");
+    const label = $("#new-count-label");
     if (count > 0) {
-      badge.textContent = `${count} new`;
+      label.textContent = `${count} new`;
       badge.style.display = "inline-flex";
     } else {
       badge.style.display = "none";
     }
   }
 
+  function updateDateLabel() {
+    const el = $("#orders-date-label");
+    const q = state.query;
+    if (q.mode === "range") {
+      el.textContent = `${q.date_from} – ${q.date_to}`;
+    } else {
+      el.textContent = q.date === today ? "(today)" : `(${q.date})`;
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Render order table
+  // ----------------------------------------------------------------
+
   function statusBadgeClass(status = "") {
     const s = status.toLowerCase();
-    if (s.includes("deliver") || s.includes("complete")) return "badge-delivered";
-    if (s.includes("progress") || s.includes("transit") || s.includes("route")) return "badge-progress";
-    if (s.includes("fail") || s.includes("cancel") || s.includes("reject")) return "badge-failed";
+    if (s.includes("deliver") || s.includes("complet") || s.includes("collect")) return "badge-delivered";
+    if (s.includes("progress") || s.includes("transit") || s.includes("route") || s.includes("assign")) return "badge-progress";
+    if (s.includes("fail") || s.includes("cancel") || s.includes("reject") || s.includes("not")) return "badge-failed";
     return "badge-status";
   }
 
@@ -102,13 +125,11 @@
     const empty = $("#orders-empty");
 
     if (state.loading) {
-      tbody.innerHTML = `
-        <tr><td colspan="7">
-          <div class="state-msg">
-            <div class="spinner"></div>
-            <div>Loading orders from Track-POD…</div>
-          </div>
-        </td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7">
+        <div class="state-msg">
+          <div class="spinner"></div>
+          <div>Loading orders from Track-POD…</div>
+        </div></td></tr>`;
       empty.style.display = "none";
       return;
     }
@@ -120,32 +141,25 @@
     }
 
     empty.style.display = "none";
-    tbody.innerHTML = state.orders.map(order => {
-      const num    = orderNum(order);
-      const addr   = order.Address1 || order.address1 || order.Address || order.address || "—";
-      const city   = order.City || order.city || "";
-      const contact= order.ContactName || order.contactName || order.contact_name || "—";
-      const date   = formatDate(order.DeliveryDate || order.deliveryDate || order.Date || order.date || "");
-      const status = order.Status || order.status || "—";
-      const isNew  = order._new;
+    tbody.innerHTML = state.orders.map(o => {
+      const num    = o.Number || o.Id || "—";
+      const client = o.Client || "—";
+      const addr   = o.Address || "—";
+      const dt     = formatDate(o.Date || o.RouteDate || "");
+      const status = o.Status || "Unassigned";
+      const isNew  = o._new;
 
-      return `
-        <tr class="${isNew ? "is-new" : ""}" data-order="${escHtml(num)}" tabindex="0">
-          <td>
-            ${isNew ? '<span class="dot-new" title="Not yet actioned in Deliver-It"></span>' : ""}
-          </td>
-          <td><strong>${escHtml(num)}</strong></td>
-          <td>${escHtml(addr)}${city ? `, ${escHtml(city)}` : ""}</td>
-          <td>${escHtml(contact)}</td>
-          <td>${escHtml(date)}</td>
-          <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
-          <td>
-            ${isNew ? `<span class="badge badge-new"><span class="dot-new"></span>New</span>` : ""}
-          </td>
-        </tr>`;
+      return `<tr class="${isNew ? "is-new" : ""}" data-order="${escHtml(num)}" tabindex="0">
+        <td>${isNew ? '<span class="dot-new" title="Not yet viewed in Deliver-It"></span>' : ""}</td>
+        <td><strong>${escHtml(num)}</strong></td>
+        <td>${escHtml(client)}</td>
+        <td>${escHtml(addr)}</td>
+        <td>${escHtml(dt)}</td>
+        <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
+        <td>${isNew ? '<span class="badge badge-new"><span class="dot-new"></span>New</span>' : ""}</td>
+      </tr>`;
     }).join("");
 
-    // Row click → view order
     $$("tbody tr[data-order]").forEach(row => {
       row.addEventListener("click", () => openOrderDetail(row.dataset.order));
       row.addEventListener("keydown", e => {
@@ -162,23 +176,23 @@
     openPanel("loading");
     try {
       const order = await apiFetch(`/api/orders/${encodeURIComponent(orderNumber)}`);
-      // Remove the row's "new" highlight immediately
-      const row = $(`tr[data-order="${CSS.escape(orderNumber)}"]`);
-      if (row) {
-        row.classList.remove("is-new");
-        const dots = $$(".dot-new", row);
-        dots.forEach(d => d.remove());
-        $$(".badge-new", row).forEach(b => b.remove());
-      }
-      const idx = state.orders.findIndex(o => orderNum(o) === orderNumber);
-      if (idx !== -1) state.orders[idx]._new = false;
-      updateNewCount();
-
+      clearNewFromRow(orderNumber);
       openPanel("view", order);
     } catch (err) {
       toast(err.message, "error");
       closePanel();
     }
+  }
+
+  function clearNewFromRow(orderNumber) {
+    const row = $(`tr[data-order="${CSS.escape(orderNumber)}"]`);
+    if (row) {
+      row.classList.remove("is-new");
+      $$(".dot-new, .badge-new", row).forEach(el => el.remove());
+    }
+    const idx = state.orders.findIndex(o => (o.Number || o.Id) === orderNumber);
+    if (idx !== -1) state.orders[idx]._new = false;
+    updateNewCount();
   }
 
   function openPanel(mode, order = null) {
@@ -200,143 +214,162 @@
 
     if (mode === "loading") {
       header.innerHTML = `<h2>Loading…</h2>
-        <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>`;
+        <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
       body.innerHTML = `<div class="state-msg"><div class="spinner"></div><div>Fetching order…</div></div>`;
       footer.innerHTML = "";
-      $("#close-panel").addEventListener("click", closePanel);
-      return;
-    }
-
-    if (mode === "create") {
+    } else if (mode === "create") {
       renderCreateForm(header, body, footer);
-      return;
-    }
-
-    if (mode === "view") {
+    } else if (mode === "view") {
       renderViewPanel(order, header, body, footer);
-      return;
+    } else if (mode === "edit") {
+      renderEditForm(order, header, body, footer);
     }
 
-    if (mode === "edit") {
-      renderEditForm(order, header, body, footer);
-      return;
-    }
+    // Wire close buttons (any .close-panel-btn)
+    $$(".close-panel-btn").forEach(btn => btn.addEventListener("click", closePanel));
   }
 
   // ---- View (read-only) ----
 
   function renderViewPanel(order, header, body, footer) {
-    const num = orderNum(order);
+    const num = order.Number || order.Id || "—";
 
     header.innerHTML = `
       <div>
         <h2>Order ${escHtml(num)}</h2>
         ${order._new ? '<span class="badge badge-new" style="margin-top:.25rem"><span class="dot-new"></span>New from Track-POD</span>' : ""}
       </div>
-      <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>`;
-    $("#close-panel").addEventListener("click", closePanel);
-
-    const fields = buildDetailFields(order);
-    const meta   = order._meta || {};
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
 
     body.innerHTML = `
       <div class="section-title">Delivery Details</div>
       <div class="detail-grid">
-        ${fields.map(f => `
-          <div class="detail-field">
-            <span class="label">${escHtml(f.label)}</span>
-            <span class="value">${escHtml(f.value || "—")}</span>
-          </div>`).join("")}
+        ${detailField("Order Number",   num)}
+        ${detailField("Status",         order.Status)}
+        ${detailField("Order Date",     formatDate(order.Date))}
+        ${detailField("Route Date",     formatDate(order.RouteDate))}
+        ${detailField("Time Window",    timeWindow(order))}
+        ${detailField("Driver",         order.DriverName)}
+        ${detailField("Route",          order.RouteNumber)}
+        ${detailField("Priority",       order.Priority)}
       </div>
-      ${renderItemsReadOnly(order)}
-      ${meta.first_seen_at ? `
-        <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border)">
-          <div class="section-title">Deliver-It Metadata</div>
-          <div class="detail-grid">
-            <div class="detail-field">
-              <span class="label">First Seen</span>
-              <span class="value">${escHtml(meta.first_seen_at)}</span>
-            </div>
-            <div class="detail-field">
-              <span class="label">First Viewed</span>
-              <span class="value">${escHtml(meta.first_viewed_at || "—")}</span>
-            </div>
-          </div>
-        </div>` : ""}`;
+
+      <div class="section-title" style="margin-top:1rem">Client & Contact</div>
+      <div class="detail-grid">
+        ${detailField("Client",         order.Client)}
+        ${detailField("Contact Name",   order.ContactName)}
+        ${detailField("Phone",          order.Phone)}
+        ${detailField("Email",          order.Email)}
+      </div>
+
+      <div class="section-title" style="margin-top:1rem">Address</div>
+      <div class="detail-grid">
+        ${detailField("Address",        order.Address, true)}
+        ${detailField("Depot",          order.Depot)}
+        ${detailField("Shipper",        order.Shipper)}
+      </div>
+
+      <div class="section-title" style="margin-top:1rem">Load</div>
+      <div class="detail-grid">
+        ${detailField("Weight",         order.Weight != null ? order.Weight : null)}
+        ${detailField("Volume",         order.Volume != null ? order.Volume : null)}
+        ${detailField("Pallets",        order.Pallets != null ? order.Pallets : null)}
+        ${detailField("COD",            order.COD != null ? `${order.COD}` : null)}
+      </div>
+
+      ${order.Note ? `
+        <div class="section-title" style="margin-top:1rem">Notes</div>
+        <div class="detail-field full">
+          <span class="value">${escHtml(order.Note)}</span>
+        </div>` : ""}
+
+      ${renderGoodsReadOnly(order.GoodsList)}
+
+      ${order.DriverComment ? `
+        <div class="section-title" style="margin-top:1rem">Driver Comment</div>
+        <div class="detail-field full"><span class="value">${escHtml(order.DriverComment)}</span></div>` : ""}
+
+      ${renderDeliveryOutcome(order)}
+
+      ${renderMeta(order._meta)}`;
 
     footer.innerHTML = `
-      <button class="btn btn-outline btn-sm" id="close-panel2">Close</button>
+      <button class="btn btn-outline btn-sm close-panel-btn">Close</button>
       <button class="btn btn-primary btn-sm" id="edit-order-btn">Edit Order</button>`;
 
-    $("#close-panel2").addEventListener("click", closePanel);
     $("#edit-order-btn").addEventListener("click", () => openPanel("edit", order));
   }
 
-  function buildDetailFields(order) {
-    return [
-      { label: "Order Number",   value: order.OrderNumber || order.orderNumber },
-      { label: "Status",         value: order.Status || order.status },
-      { label: "Delivery Date",  value: formatDate(order.DeliveryDate || order.deliveryDate || order.Date || order.date) },
-      { label: "Time Window",    value: timeWindow(order) },
-      { label: "Contact Name",   value: order.ContactName || order.contactName },
-      { label: "Phone",          value: order.Phone || order.phone },
-      { label: "Email",          value: order.Email || order.email },
-      { label: "Address 1",      value: order.Address1 || order.address1 },
-      { label: "Address 2",      value: order.Address2 || order.address2 },
-      { label: "City",           value: order.City || order.city },
-      { label: "Post Code",      value: order.PostCode || order.postCode || order.ZipCode || order.zipCode },
-      { label: "Notes",          value: order.Notes || order.notes || order.Comment || order.comment },
-    ].filter(f => f.value);
+  function detailField(label, value, fullWidth = false) {
+    if (value === null || value === undefined || value === "" || value === "—") return "";
+    return `<div class="detail-field${fullWidth ? " full" : ""}">
+      <span class="label">${escHtml(label)}</span>
+      <span class="value">${escHtml(String(value))}</span>
+    </div>`;
   }
 
-  function renderItemsReadOnly(order) {
-    const items = order.Products || order.products || order.Items || order.items || [];
-    if (!items.length) return "";
+  function renderGoodsReadOnly(goods) {
+    if (!goods || !goods.length) return "";
     return `
       <div style="margin-top:1rem">
-        <div class="section-title">Items</div>
+        <div class="section-title">Goods</div>
         <table style="font-size:.78rem">
-          <thead><tr>
-            <th>Description</th><th>Qty</th><th>Weight</th>
-          </tr></thead>
+          <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Note</th></tr></thead>
           <tbody>
-            ${items.map(it => `<tr>
-              <td>${escHtml(it.Description || it.description || it.Name || it.name || "")}</td>
-              <td>${escHtml(String(it.Quantity || it.quantity || ""))}</td>
-              <td>${escHtml(String(it.Weight || it.weight || ""))}</td>
+            ${goods.map(g => `<tr>
+              <td>${escHtml(g.GoodsName || "")}</td>
+              <td>${escHtml(String(g.Quantity ?? ""))}</td>
+              <td>${escHtml(g.GoodsUnit || "")}</td>
+              <td>${escHtml(g.Note || "")}</td>
             </tr>`).join("")}
           </tbody>
         </table>
       </div>`;
   }
 
+  function renderDeliveryOutcome(order) {
+    const parts = [];
+    if (order.SignatureName)   parts.push(detailField("Signed By",      order.SignatureName));
+    if (order.RejectReason)    parts.push(detailField("Reject Reason",  order.RejectReason));
+    if (order.ReturnReason)    parts.push(detailField("Return Reason",  order.ReturnReason));
+    if (order.StatusDate)      parts.push(detailField("Status Date",    formatDate(order.StatusDate)));
+    if (!parts.length) return "";
+    return `<div class="section-title" style="margin-top:1rem">Outcome</div>
+      <div class="detail-grid">${parts.join("")}</div>`;
+  }
+
+  function renderMeta(meta) {
+    if (!meta || !meta.first_seen_at) return "";
+    return `<div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border)">
+      <div class="section-title">Deliver-It Tracking</div>
+      <div class="detail-grid">
+        ${detailField("First Seen",   meta.first_seen_at)}
+        ${detailField("First Viewed", meta.first_viewed_at || "—")}
+      </div></div>`;
+  }
+
   // ---- Create form ----
 
   function renderCreateForm(header, body, footer) {
-    header.innerHTML = `
-      <h2>New Order</h2>
-      <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>`;
-    $("#close-panel").addEventListener("click", closePanel);
+    header.innerHTML = `<h2>New Order</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
 
     body.innerHTML = orderFormHTML(null);
     attachItemsLogic(body);
 
     footer.innerHTML = `
-      <button class="btn btn-outline btn-sm" id="close-panel2">Cancel</button>
+      <button class="btn btn-outline btn-sm close-panel-btn">Cancel</button>
       <button class="btn btn-primary btn-sm" id="save-order-btn">Create Order</button>`;
 
-    $("#close-panel2").addEventListener("click", closePanel);
-    $("#save-order-btn").addEventListener("click", () => submitCreate());
+    $("#save-order-btn").addEventListener("click", submitCreate);
   }
 
   // ---- Edit form ----
 
   function renderEditForm(order, header, body, footer) {
-    const num = orderNum(order);
-    header.innerHTML = `
-      <h2>Edit Order ${escHtml(num)}</h2>
-      <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>`;
-    $("#close-panel").addEventListener("click", closePanel);
+    const num = order.Number || order.Id || "";
+    header.innerHTML = `<h2>Edit Order ${escHtml(num)}</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
 
     body.innerHTML = orderFormHTML(order);
     attachItemsLogic(body);
@@ -349,161 +382,185 @@
     $("#save-order-btn").addEventListener("click", () => submitEdit(num));
   }
 
-  function orderFormHTML(order) {
-    const v = (keys) => {
-      if (!order) return "";
-      for (const k of keys) {
-        if (order[k] !== undefined && order[k] !== null) return order[k];
-      }
-      return "";
-    };
+  // ---- Order form HTML ----
 
-    const items = order ? (order.Products || order.products || order.Items || order.items || []) : [];
+  function orderFormHTML(o) {
+    const v = o ? (k) => (o[k] != null ? String(o[k]) : "") : () => "";
+    const goods = o ? (o.GoodsList || []) : [];
 
     return `
       <div class="section-title">Order Details</div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Order Number<span class="required">*</span></label>
-          <input type="text" id="f-order-number" value="${escAttr(v(["OrderNumber","orderNumber"]))}" placeholder="e.g. ORD-001" ${order ? "readonly" : ""}>
+          <label>Order Number${o ? "" : '<span class="required">*</span>'}</label>
+          <input type="text" id="f-number" value="${escAttr(v("Number"))}" placeholder="e.g. ORD-001"${o ? " readonly" : ""}>
         </div>
         <div class="form-group">
-          <label>Delivery Date<span class="required">*</span></label>
-          <input type="date" id="f-date" value="${escAttr(isoDate(v(["DeliveryDate","deliveryDate","Date","date"])))}">
+          <label>Order Date</label>
+          <input type="date" id="f-date" value="${escAttr(isoDate(v("Date")))}">
         </div>
         <div class="form-group">
           <label>Time From</label>
-          <input type="time" id="f-time-from" value="${escAttr(v(["TimeFrom","timeFrom"]))}">
+          <input type="time" id="f-time-from" value="${escAttr(v("TimeSlotFrom").slice(0,5))}">
         </div>
         <div class="form-group">
           <label>Time To</label>
-          <input type="time" id="f-time-to" value="${escAttr(v(["TimeTo","timeTo"]))}">
+          <input type="time" id="f-time-to" value="${escAttr(v("TimeSlotTo").slice(0,5))}">
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="f-type">
+            <option value="0"${v("Type") !== "1" ? " selected" : ""}>Delivery</option>
+            <option value="1"${v("Type") === "1" ? " selected" : ""}>Collection</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Priority</label>
+          <select id="f-priority">
+            <option value="">—</option>
+            <option value="low"${v("Priority") === "low" ? " selected" : ""}>Low</option>
+            <option value="normal"${v("Priority") === "normal" ? " selected" : ""}>Normal</option>
+            <option value="high"${v("Priority") === "high" ? " selected" : ""}>High</option>
+          </select>
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:1rem">Recipient</div>
+      <div class="section-title" style="margin-top:1rem">Client<span class="required">*</span></div>
       <div class="form-grid">
+        <div class="form-group full">
+          <label>Client / Customer Name<span class="required">*</span></label>
+          <input type="text" id="f-client" value="${escAttr(v("Client"))}" placeholder="Required">
+        </div>
         <div class="form-group">
-          <label>Contact Name<span class="required">*</span></label>
-          <input type="text" id="f-contact" value="${escAttr(v(["ContactName","contactName"]))}">
+          <label>Contact Name</label>
+          <input type="text" id="f-contact" value="${escAttr(v("ContactName"))}">
         </div>
         <div class="form-group">
           <label>Phone</label>
-          <input type="tel" id="f-phone" value="${escAttr(v(["Phone","phone"]))}">
+          <input type="tel" id="f-phone" value="${escAttr(v("Phone"))}">
         </div>
         <div class="form-group full">
           <label>Email</label>
-          <input type="email" id="f-email" value="${escAttr(v(["Email","email"]))}">
+          <input type="email" id="f-email" value="${escAttr(v("Email"))}">
         </div>
       </div>
 
       <div class="section-title" style="margin-top:1rem">Delivery Address</div>
       <div class="form-grid">
         <div class="form-group full">
-          <label>Address Line 1<span class="required">*</span></label>
-          <input type="text" id="f-addr1" value="${escAttr(v(["Address1","address1","Address","address"]))}">
+          <label>Address<span class="required">*</span></label>
+          <input type="text" id="f-address" value="${escAttr(v("Address"))}" placeholder="Full delivery address. Required">
         </div>
         <div class="form-group full">
-          <label>Address Line 2</label>
-          <input type="text" id="f-addr2" value="${escAttr(v(["Address2","address2"]))}">
+          <label>Depot / Pickup Address</label>
+          <input type="text" id="f-depot" value="${escAttr(v("Depot"))}">
+        </div>
+        <div class="form-group full">
+          <label>Shipper</label>
+          <input type="text" id="f-shipper" value="${escAttr(v("Shipper"))}">
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:1rem">Load</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Weight (kg)</label>
+          <input type="number" id="f-weight" step="0.01" value="${escAttr(v("Weight"))}">
         </div>
         <div class="form-group">
-          <label>City<span class="required">*</span></label>
-          <input type="text" id="f-city" value="${escAttr(v(["City","city"]))}">
+          <label>Volume (m³)</label>
+          <input type="number" id="f-volume" step="0.001" value="${escAttr(v("Volume"))}">
         </div>
         <div class="form-group">
-          <label>Post / Zip Code</label>
-          <input type="text" id="f-postcode" value="${escAttr(v(["PostCode","postCode","ZipCode","zipCode"]))}">
+          <label>Pallets</label>
+          <input type="number" id="f-pallets" step="0.5" value="${escAttr(v("Pallets"))}">
+        </div>
+        <div class="form-group">
+          <label>COD ($)</label>
+          <input type="number" id="f-cod" step="0.01" value="${escAttr(v("COD"))}">
         </div>
       </div>
 
       <div class="section-title" style="margin-top:1rem">Notes</div>
       <div class="form-group">
-        <textarea id="f-notes" rows="2">${escHtml(v(["Notes","notes","Comment","comment"]))}</textarea>
+        <textarea id="f-note" rows="2">${escHtml(v("Note"))}</textarea>
       </div>
 
-      <div class="section-title" style="margin-top:1rem">Items</div>
-      <div id="items-container">
-        ${items.length
-          ? items.map((it, i) => itemRowHTML(i, it)).join("")
-          : itemRowHTML(0, {})}
+      <div class="section-title" style="margin-top:1rem">Goods</div>
+      <div id="items-header" style="display:grid;grid-template-columns:1fr 80px 90px 28px;gap:.4rem;margin-bottom:.25rem;padding:0 .1rem">
+        <span style="font-size:.68rem;color:var(--text-muted);font-weight:600">ITEM NAME</span>
+        <span style="font-size:.68rem;color:var(--text-muted);font-weight:600">QTY</span>
+        <span style="font-size:.68rem;color:var(--text-muted);font-weight:600">UNIT</span>
+        <span></span>
       </div>
-      <button type="button" class="add-item-btn" id="add-item-btn">+ Add item</button>
-    `;
+      <div id="items-container">
+        ${goods.length ? goods.map((g, i) => itemRowHTML(i, g)).join("") : itemRowHTML(0, {})}
+      </div>
+      <button type="button" class="add-item-btn" id="add-item-btn">+ Add goods line</button>`;
   }
 
   function itemRowHTML(idx, item = {}) {
-    const v = (keys) => {
-      for (const k of keys) {
-        if (item[k] !== undefined && item[k] !== null) return item[k];
-      }
-      return "";
-    };
-    return `
-      <div class="item-row" data-item-idx="${idx}">
-        <input type="text"   placeholder="Description"
-               class="item-desc" value="${escAttr(v(["Description","description","Name","name"]))}">
-        <input type="number" placeholder="Qty" min="1"
-               class="item-qty"  value="${escAttr(v(["Quantity","quantity"]))}">
-        <input type="number" placeholder="Weight kg" step="0.01"
-               class="item-weight" value="${escAttr(v(["Weight","weight"]))}">
-        <button type="button" class="btn btn-ghost btn-sm remove-item" title="Remove" style="padding:.25rem">✕</button>
-      </div>`;
+    return `<div class="item-row" data-item-idx="${idx}">
+      <input type="text"   placeholder="Item description" class="item-name"
+             value="${escAttr(item.GoodsName || "")}">
+      <input type="number" placeholder="Qty" min="0" step="0.01" class="item-qty"
+             value="${escAttr(item.Quantity != null ? String(item.Quantity) : "")}">
+      <input type="text"   placeholder="pcs / kg / pkg…" class="item-unit"
+             value="${escAttr(item.GoodsUnit || "")}">
+      <button type="button" class="btn btn-ghost btn-sm remove-item" title="Remove" style="padding:.25rem">✕</button>
+    </div>`;
   }
 
   function attachItemsLogic(ctx) {
     const container = $("#items-container", ctx);
-
     $("#add-item-btn", ctx).addEventListener("click", () => {
       const idx = $$(".item-row", container).length;
       container.insertAdjacentHTML("beforeend", itemRowHTML(idx, {}));
       attachRemoveItems(container);
     });
-
     attachRemoveItems(container);
   }
 
   function attachRemoveItems(container) {
     $$(".remove-item", container).forEach(btn => {
       btn.onclick = () => {
-        const rows = $$(".item-row", container);
-        if (rows.length > 1) btn.closest(".item-row").remove();
-        else {
-          // Clear the last row instead of removing
+        if ($$(".item-row", container).length > 1) {
+          btn.closest(".item-row").remove();
+        } else {
           $$("input", btn.closest(".item-row")).forEach(i => i.value = "");
         }
       };
     });
   }
 
-  // ---- Submit ----
+  // ---- Collect & submit ----
 
   function collectFormPayload() {
     const g = (id) => ($(id)?.value || "").trim();
-    const items = $$(".item-row").map(row => {
-      const desc   = $(".item-desc", row)?.value.trim()   || "";
-      const qty    = $(".item-qty", row)?.value.trim()    || "";
-      const weight = $(".item-weight", row)?.value.trim() || "";
-      if (!desc && !qty && !weight) return null;
-      const item = {};
-      if (desc)   item.Description = desc;
-      if (qty)    item.Quantity = Number(qty);
-      if (weight) item.Weight = Number(weight);
-      return item;
-    }).filter(Boolean);
+    const n = (id) => { const v = $(id)?.value; return v ? Number(v) : null; };
 
     const payload = {};
-    const orderNum = g("#f-order-number");
-    if (orderNum) payload.OrderNumber = orderNum;
 
-    const date = g("#f-date");
-    if (date) payload.DeliveryDate = date;
+    const number = g("#f-number");
+    if (number) payload.Number = number;
+
+    const dt = g("#f-date");
+    if (dt) payload.Date = dt;
 
     const timeFrom = g("#f-time-from");
-    if (timeFrom) payload.TimeFrom = timeFrom;
+    if (timeFrom) payload.TimeSlotFrom = timeFrom;
 
     const timeTo = g("#f-time-to");
-    if (timeTo) payload.TimeTo = timeTo;
+    if (timeTo) payload.TimeSlotTo = timeTo;
+
+    const type = g("#f-type");
+    payload.Type = Number(type);   // 0=Delivery, 1=Collection
+
+    const priority = g("#f-priority");
+    if (priority) payload.Priority = priority;
+
+    const client = g("#f-client");
+    if (client) payload.Client = client;
 
     const contact = g("#f-contact");
     if (contact) payload.ContactName = contact;
@@ -514,44 +571,53 @@
     const email = g("#f-email");
     if (email) payload.Email = email;
 
-    const addr1 = g("#f-addr1");
-    if (addr1) payload.Address1 = addr1;
+    const address = g("#f-address");
+    if (address) payload.Address = address;
 
-    const addr2 = g("#f-addr2");
-    if (addr2) payload.Address2 = addr2;
+    const depot = g("#f-depot");
+    if (depot) payload.Depot = depot;
 
-    const city = g("#f-city");
-    if (city) payload.City = city;
+    const shipper = g("#f-shipper");
+    if (shipper) payload.Shipper = shipper;
 
-    const postcode = g("#f-postcode");
-    if (postcode) payload.PostCode = postcode;
+    const weight  = n("#f-weight");  if (weight  != null) payload.Weight  = weight;
+    const volume  = n("#f-volume");  if (volume  != null) payload.Volume  = volume;
+    const pallets = n("#f-pallets"); if (pallets != null) payload.Pallets = pallets;
+    const cod     = n("#f-cod");     if (cod     != null) payload.COD     = cod;
 
-    const notes = g("#f-notes");
-    if (notes) payload.Notes = notes;
+    const note = g("#f-note");
+    if (note) payload.Note = note;
 
-    if (items.length) payload.Products = items;
+    const goods = $$(".item-row").map(row => {
+      const name = $(".item-name", row)?.value.trim() || "";
+      const qty  = $(".item-qty",  row)?.value.trim() || "";
+      const unit = $(".item-unit", row)?.value.trim() || "";
+      if (!name && !qty) return null;
+      const item = {};
+      if (name) item.GoodsName = name;
+      if (qty)  item.Quantity  = Number(qty);
+      if (unit) item.GoodsUnit = unit;
+      return item;
+    }).filter(Boolean);
+    if (goods.length) payload.GoodsList = goods;
 
     return payload;
   }
 
-  function validatePayload(payload, requireOrderNumber = true) {
-    const errors = [];
-    if (requireOrderNumber && !payload.OrderNumber) errors.push("Order Number is required.");
-    if (!payload.ContactName)  errors.push("Contact Name is required.");
-    if (!payload.Address1)     errors.push("Address Line 1 is required.");
-    if (!payload.City)         errors.push("City is required.");
-    if (!payload.DeliveryDate) errors.push("Delivery Date is required.");
-    return errors;
+  function validatePayload(payload) {
+    const errs = [];
+    if (!payload.Client)  errs.push("Client name is required.");
+    if (!payload.Address) errs.push("Address is required.");
+    return errs;
   }
 
   async function submitCreate() {
     const payload = collectFormPayload();
-    const errs = validatePayload(payload, true);
+    const errs = validatePayload(payload);
     if (errs.length) { toast(errs.join(" "), "error"); return; }
 
     const btn = $("#save-order-btn");
-    btn.disabled = true;
-    btn.textContent = "Creating…";
+    btn.disabled = true; btn.textContent = "Creating…";
     try {
       await apiFetch("/api/orders", { method: "POST", body: JSON.stringify(payload) });
       toast("Order created in Track-POD.", "success");
@@ -560,19 +626,17 @@
     } catch (err) {
       toast(err.message, "error");
     } finally {
-      btn.disabled = false;
-      btn.textContent = "Create Order";
+      btn.disabled = false; btn.textContent = "Create Order";
     }
   }
 
   async function submitEdit(orderNumber) {
     const payload = collectFormPayload();
-    const errs = validatePayload(payload, false);
+    const errs = validatePayload(payload);
     if (errs.length) { toast(errs.join(" "), "error"); return; }
 
     const btn = $("#save-order-btn");
-    btn.disabled = true;
-    btn.textContent = "Saving…";
+    btn.disabled = true; btn.textContent = "Saving…";
     try {
       await apiFetch(`/api/orders/${encodeURIComponent(orderNumber)}`,
         { method: "PUT", body: JSON.stringify(payload) });
@@ -582,19 +646,13 @@
     } catch (err) {
       toast(err.message, "error");
     } finally {
-      btn.disabled = false;
-      btn.textContent = "Save Changes";
+      btn.disabled = false; btn.textContent = "Save Changes";
     }
   }
 
   // ----------------------------------------------------------------
   // Utilities
   // ----------------------------------------------------------------
-
-  function orderNum(order) {
-    return (order.OrderNumber || order.orderNumber || order.order_number ||
-            order.Number      || order.number      || "").toString();
-  }
 
   function formatDate(raw) {
     if (!raw) return "";
@@ -605,67 +663,98 @@
 
   function isoDate(raw) {
     if (!raw) return "";
+    // Handle "yyyy-MM-dd" strings without timezone shift
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
     const d = new Date(raw);
-    if (isNaN(d)) return "";
-    return d.toISOString().slice(0, 10);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
   }
 
   function timeWindow(order) {
-    const from = order.TimeFrom || order.timeFrom || "";
-    const to   = order.TimeTo   || order.timeTo   || "";
+    const from = (order.TimeSlotFrom || "").slice(0, 5);
+    const to   = (order.TimeSlotTo   || "").slice(0, 5);
     if (from && to) return `${from} – ${to}`;
     return from || to || "";
   }
 
   function escHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    return String(str ?? "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   function escAttr(str) { return escHtml(str); }
 
+  function shiftDate(dateStr, days) {
+    const d = new Date(dateStr + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
   // ----------------------------------------------------------------
-  // Wire up the page
+  // Wire up page controls
   // ----------------------------------------------------------------
 
   function init() {
+    // Initialise date pickers to today
+    $("#filter-date").value = today;
+    $("#filter-from").value = today;
+    $("#filter-to").value   = today;
+
+    // Mode switch
+    $("#filter-mode").addEventListener("change", function () {
+      const isRange = this.value === "range";
+      state.query.mode = this.value;
+      $("#filter-day-wrap").style.display        = isRange ? "none"  : "";
+      $("#filter-range-from-wrap").style.display = isRange ? ""      : "none";
+      $("#filter-range-to-wrap").style.display   = isRange ? ""      : "none";
+      $("#prev-day").style.visibility            = isRange ? "hidden": "";
+      $("#next-day").style.visibility            = isRange ? "hidden": "";
+    });
+
     // Filters
-    const applyBtn = $("#apply-filters");
-    applyBtn?.addEventListener("click", () => {
-      state.filters.date_from = $("#filter-from")?.value || "";
-      state.filters.date_to   = $("#filter-to")?.value   || "";
-      state.filters.status    = $("#filter-status")?.value || "";
+    $("#apply-filters").addEventListener("click", () => {
+      const mode = state.query.mode;
+      if (mode === "range") {
+        state.query.date_from = $("#filter-from").value || today;
+        state.query.date_to   = $("#filter-to").value   || today;
+      } else {
+        state.query.date = $("#filter-date").value || today;
+      }
       loadOrders();
     });
 
-    $("#clear-filters")?.addEventListener("click", () => {
-      $("#filter-from").value   = "";
-      $("#filter-to").value     = "";
-      $("#filter-status").value = "";
-      state.filters = { date_from: "", date_to: "", status: "" };
+    // Day navigation
+    $("#prev-day").addEventListener("click", () => {
+      state.query.date = shiftDate(state.query.date, -1);
+      $("#filter-date").value = state.query.date;
+      loadOrders();
+    });
+    $("#next-day").addEventListener("click", () => {
+      state.query.date = shiftDate(state.query.date, 1);
+      $("#filter-date").value = state.query.date;
+      loadOrders();
+    });
+    $("#today-btn").addEventListener("click", () => {
+      state.query.date = today;
+      $("#filter-date").value = today;
       loadOrders();
     });
 
-    // Refresh
-    $("#refresh-btn")?.addEventListener("click", loadOrders);
+    // Header actions
+    $("#refresh-btn").addEventListener("click", loadOrders);
+    $("#new-order-btn").addEventListener("click", () => openPanel("create"));
 
-    // New order
-    $("#new-order-btn")?.addEventListener("click", () => openPanel("create"));
-
-    // Overlay click-outside
-    $("#overlay")?.addEventListener("click", e => {
+    // Close panel on overlay click
+    $("#overlay").addEventListener("click", e => {
       if (e.target === $("#overlay")) closePanel();
     });
 
-    // Keyboard: Escape closes panel
+    // Escape key
     document.addEventListener("keydown", e => {
       if (e.key === "Escape") closePanel();
     });
 
-    // Initial load
     loadOrders();
   }
 

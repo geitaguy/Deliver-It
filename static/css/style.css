@@ -473,6 +473,8 @@ td {
   gap: .5rem 1rem;
 }
 
+.detail-grid .full { grid-column: 1 / -1; }
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {
