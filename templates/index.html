@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deliver-It</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ====== App Header ====== -->
+<header class="app-header">
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <span style="font-size:1.3rem">📦</span>
+    <h1>Deliver-It <span class="subtitle">powered by Track-POD</span></h1>
+  </div>
+  <div class="header-actions">
+    <span class="badge badge-new" id="new-count" style="display:none;gap:.35rem">
+      <span class="dot-new"></span>
+      <span id="new-count"></span>
+    </span>
+    <button class="btn btn-outline btn-sm" id="refresh-btn" style="color:#fff;border-color:rgba(255,255,255,.4)">
+      ↻ Refresh
+    </button>
+    <button class="btn btn-primary btn-sm" id="new-order-btn"
+            style="background:#fff;color:var(--brand)">
+      + New Order
+    </button>
+  </div>
+</header>
+
+<!-- ====== Main Content ====== -->
+<main class="container">
+
+  <!-- Filters -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="filters">
+      <div class="filter-group">
+        <label for="filter-from">Date From</label>
+        <input type="date" id="filter-from">
+      </div>
+      <div class="filter-group">
+        <label for="filter-to">Date To</label>
+        <input type="date" id="filter-to">
+      </div>
+      <div class="filter-group">
+        <label for="filter-status">Status</label>
+        <select id="filter-status" style="min-width:130px">
+          <option value="">All statuses</option>
+          <option value="Unassigned">Unassigned</option>
+          <option value="Assigned">Assigned</option>
+          <option value="InProgress">In Progress</option>
+          <option value="Arrived">Arrived</option>
+          <option value="Delivered">Delivered</option>
+          <option value="Failed">Failed</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:flex-end;margin-left:auto">
+        <button class="btn btn-outline btn-sm" id="clear-filters">Clear</button>
+        <button class="btn btn-primary btn-sm" id="apply-filters">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Orders</h2>
+      <p style="font-size:.72rem;color:var(--text-muted)">
+        Orders marked <strong style="color:var(--new-badge)">New</strong> originated in
+        Track-POD and have not yet been viewed here — click to action.
+      </p>
+    </div>
+    <div class="orders-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18px"></th>
+            <th>Order #</th>
+            <th>Address</th>
+            <th>Contact</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th style="width:80px"></th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody">
+          <tr>
+            <td colspan="7">
+              <div class="state-msg">
+                <div class="spinner"></div>
+                <div>Loading orders from Track-POD…</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="orders-empty" class="state-msg" style="display:none">
+      <div class="icon">📭</div>
+      <div>No orders found. Adjust the filters or create a new order.</div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ====== Slide-over panel ====== -->
+<div class="overlay" id="overlay">
+  <div class="slide-panel" role="dialog" aria-modal="true">
+    <div class="panel-header" id="panel-header">
+      <!-- Populated by JS -->
+    </div>
+    <div class="panel-body" id="panel-body">
+      <!-- Populated by JS -->
+    </div>
+    <div class="panel-footer" id="panel-footer">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ====== Toast container ====== -->
+<div id="toast"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
