@@ -913,6 +913,14 @@
                   ${escHtml(slot.label)}&nbsp;<span style="color:#c05;font-size:.65rem">Full</span>
                 </button>`;
       }
+      if (slot.limited) {
+        // Limited — bookable but flagged with a warning
+        return `<button class="btn btn-outline btn-sm" data-book-date="${escAttr(slot.date)}"
+                  style="font-size:.75rem;padding:.3rem .6rem;border-color:#d97706;color:#92400e"
+                  title="${escAttr(slot.message)}">
+                  ${escHtml(slot.label)}&nbsp;<span style="font-size:.65rem">Limited</span>
+                </button>`;
+      }
       if (slot.rescheduled_from) {
         // Rescheduled — bookable, but flagged
         const msg = slot.message ? ` · ${slot.message}` : "";
@@ -974,10 +982,11 @@
     }
 
     function renderAvailabilityBody(overrides) {
-      const STATUS_LABELS = { cancelled: "Cancelled", full: "Full", rescheduled: "Rescheduled" };
+      const STATUS_LABELS = { cancelled: "Cancelled", full: "Full", limited: "Limited", rescheduled: "Rescheduled" };
       const STATUS_COLORS = {
         cancelled:   "color:#b91c1c;background:#fef2f2;border-color:#fecaca",
         full:        "color:#92400e;background:#fffbeb;border-color:#fde68a",
+        limited:     "color:#92400e;background:#fffbeb;border-color:#fde68a",
         rescheduled: "color:#1e40af;background:#eff6ff;border-color:#bfdbfe",
       };
 
@@ -1035,6 +1044,7 @@
             <select id="ov-status">
               <option value="cancelled">Cancelled</option>
               <option value="full">Full</option>
+              <option value="limited">Limited</option>
               <option value="rescheduled">Rescheduled</option>
             </select>
           </div>
@@ -1044,8 +1054,8 @@
           </div>
         </div>
         <div class="form-group" style="margin-bottom:.6rem">
-          <label style="font-size:.75rem">Message (optional)</label>
-          <input type="text" id="ov-message" placeholder="e.g. Truck unavailable"
+          <label style="font-size:.75rem">Message<span class="required">*</span></label>
+          <input type="text" id="ov-message" placeholder="e.g. Truck unavailable — deliveries cancelled"
                  style="width:100%;box-sizing:border-box">
         </div>
         <button class="btn btn-primary btn-sm" id="ov-add-btn" style="margin-bottom:1.25rem">
@@ -1076,6 +1086,7 @@
           message:          body.querySelector("#ov-message").value.trim() || null,
         };
         if (!payload.date) { toast("Date is required.", "error"); return; }
+        if (!payload.message) { toast("Message is required.", "error"); return; }
         const btn = body.querySelector("#ov-add-btn");
         btn.disabled = true; btn.textContent = "Adding…";
         try {

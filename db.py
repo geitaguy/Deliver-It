@@ -15,7 +15,7 @@ from contextlib import contextmanager
 DB_PATH = os.environ.get("DATABASE_PATH", "deliver_it.db")
 
 ROUTING_AREAS = {"Monday", "Tuesday", "Thursday", "Friday"}
-VALID_STATUSES = {"cancelled", "full", "rescheduled"}
+VALID_STATUSES = {"cancelled", "full", "limited", "rescheduled"}
 
 
 def _connect() -> sqlite3.Connection:

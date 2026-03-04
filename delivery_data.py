@@ -168,6 +168,12 @@ def _slot_for_date(
                 "full": True, "message": ov.get("message") or "",
             }
 
+        if ov["status"] == "limited":
+            return {
+                "date": d_str, "label": label, "day": eff,
+                "limited": True, "message": ov.get("message") or "",
+            }
+
         # status is 'cancelled' or 'rescheduled' — skip this date.
         return None
 

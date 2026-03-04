@@ -342,6 +342,8 @@ def create_route_override():
         return jsonify({"error": f"routing_area must be one of {sorted(db.ROUTING_AREAS)}."}), 400
     if status not in db.VALID_STATUSES:
         return jsonify({"error": f"status must be one of {sorted(db.VALID_STATUSES)}."}), 400
+    if not message:
+        return jsonify({"error": "message is required."}), 400
     if status == "rescheduled" and not rescheduled_date:
         return jsonify({"error": "rescheduled_date is required when status is 'rescheduled'."}), 400
 
