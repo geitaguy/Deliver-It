@@ -153,22 +153,54 @@
     }
   }
 
-  function orderRowHTML(o) {
+  function orderRowHTML(o, stopLabel = "") {
     const num    = o.Number || o.Id || "—";
     const client = o.Client || "—";
     const addr   = o.Address || "—";
     const dt     = formatDate(o.Date || o.RouteDate || "");
     const status = o.Status || "Unassigned";
     const isNew  = o._new;
-    return `<tr class="${isNew ? "is-new" : ""}" data-order="${escAttr(num)}" tabindex="0">
+
+    const rowClass = [
+      isNew                    ? "is-new"           : "",
+      stopLabel === "current"  ? "is-current-stop"  : "",
+      stopLabel === "next"     ? "is-next-stop"      : "",
+    ].filter(Boolean).join(" ");
+
+    const stopBadge = stopLabel === "current"
+      ? '<span class="badge badge-current-stop">▶ Now</span>'
+      : stopLabel === "next"
+        ? '<span class="badge badge-next-stop">Next</span>'
+        : "";
+
+    const lastCell = [
+      isNew ? '<span class="badge badge-new"><span class="dot-new"></span>New</span>' : "",
+      stopBadge,
+    ].filter(Boolean).join(" ");
+
+    return `<tr class="${rowClass}" data-order="${escAttr(num)}" tabindex="0">
       <td>${isNew ? '<span class="dot-new" title="Not yet viewed in Deliver-It"></span>' : ""}</td>
       <td><strong>${escHtml(num)}</strong></td>
       <td>${escHtml(client)}</td>
       <td>${escHtml(addr)}</td>
       <td>${escHtml(dt)}</td>
       <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
-      <td>${isNew ? '<span class="badge badge-new"><span class="dot-new"></span>New</span>' : ""}</td>
+      <td>${lastCell}</td>
     </tr>`;
+  }
+
+  function stopLabels(orders) {
+    // For an InProgress route: find the current stop (first non-done order by SeqNumber)
+    // and the next stop (second non-done order). Returns a Map of order key → label.
+    const sorted = [...orders].sort((a, b) => (a.SeqNumber ?? 9999) - (b.SeqNumber ?? 9999));
+    const pending = sorted.filter(o => {
+      const cat = statusCategory(o.Status || "");
+      return cat !== "completed" && cat !== "failed";
+    });
+    const map = new Map();
+    if (pending[0]) map.set(pending[0].Number || pending[0].Id, "current");
+    if (pending[1]) map.set(pending[1].Number || pending[1].Id, "next");
+    return map;
   }
 
   function groupByRoute(orders) {
@@ -260,8 +292,15 @@
 
     let html = "";
     for (const code of routeCodes) {
-      html += routeSectionHeaderHTML(code, routeMap[code] || null, groups[code].length);
-      html += groups[code].map(orderRowHTML).join("");
+      const route   = routeMap[code] || null;
+      const orders  = groups[code];
+      html += routeSectionHeaderHTML(code, route, orders.length);
+      if (route && route.Status === "InProgress") {
+        const labels = stopLabels(orders);
+        html += orders.map(o => orderRowHTML(o, labels.get(o.Number || o.Id) || "")).join("");
+      } else {
+        html += orders.map(o => orderRowHTML(o)).join("");
+      }
     }
     if (unassigned.length) {
       if (routeCodes.length > 0) html += unassignedSectionHeaderHTML(unassigned.length);

@@ -82,12 +82,12 @@ def list_orders():
 
     viewed = db.get_viewed_set()
 
-    def _is_completed(order: dict) -> bool:
+    def _suppress_new(order: dict) -> bool:
         status = (order.get("Status") or "").lower()
-        return any(s in status for s in ("deliver", "complet", "collect"))
+        return any(s in status for s in ("deliver", "complet", "collect", "progress", "transit"))
 
     enriched = [
-        {**o, "_new": o.get("Number", "") not in viewed and not _is_completed(o)}
+        {**o, "_new": o.get("Number", "") not in viewed and not _suppress_new(o)}
         for o in orders
     ]
 

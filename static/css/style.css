@@ -508,6 +508,15 @@ tr.route-section-hdr { cursor: default; }
 .badge-route-progress { background: #fef3c7; color: #b45309; }
 .badge-route-closed   { background: var(--success-light); color: var(--success); }
 
+/* ---- Current / next stop highlighting (InProgress routes) ---- */
+
+tbody tr.is-current-stop { background: #fef3c7; }
+tbody tr.is-current-stop:hover { background: #fde68a; }
+tbody tr.is-next-stop { background: var(--bg); }
+
+.badge-current-stop { background: #f59e0b; color: #fff; }
+.badge-next-stop    { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {
