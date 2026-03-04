@@ -14,6 +14,7 @@ from flask import Flask, jsonify, render_template, request, abort
 from dotenv import load_dotenv
 
 import db
+import delivery_data
 from track_pod import TrackPodClient, TrackPodError
 
 load_dotenv()
@@ -31,6 +32,11 @@ def _client() -> TrackPodClient:
 
 with app.app_context():
     db.init_db()
+    _loaded = delivery_data.load()
+    if _loaded:
+        app.logger.info("Delivery data: %d suburbs loaded.", _loaded)
+    else:
+        app.logger.warning("Delivery data: spreadsheet not found or empty.")
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +224,30 @@ def assign_order_to_route(route_code: str, order_number: str):
     except TrackPodError as exc:
         return jsonify({"error": exc.message}), exc.status_code
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# JSON API — Suburb delivery-day lookup
+# ---------------------------------------------------------------------------
+
+@app.route("/api/suburb-search")
+def suburb_search():
+    """
+    Search for a suburb by name or postcode and return delivery day information.
+
+    Query params:
+      q   Suburb name or postcode (partial match, case-insensitive)
+    """
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+    return jsonify(delivery_data.search(q))
+
+
+@app.route("/api/wa-holidays")
+def wa_holidays():
+    """Return the list of WA public holidays known to the system."""
+    return jsonify(sorted(d.isoformat() for d in delivery_data.WA_HOLIDAYS))
 
 
 # ---------------------------------------------------------------------------

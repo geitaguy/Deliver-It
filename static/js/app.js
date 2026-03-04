@@ -22,7 +22,7 @@
     loading:      false,
     statusFilter: "all",
     query:        { mode: "day", date: today, date_from: today, date_to: today },
-    panel:        { mode: null, order: null, route: null },
+    panel:        { mode: null, order: null, route: null, context: null },
   };
 
   // ----------------------------------------------------------------
@@ -352,14 +352,14 @@
     updateNewCount();
   }
 
-  function openPanel(mode, order = null, route = null) {
-    state.panel = { mode, order, route };
+  function openPanel(mode, order = null, route = null, context = null) {
+    state.panel = { mode, order, route, context };
     renderPanel();
     $("#overlay").classList.add("open");
   }
 
   function closePanel() {
-    state.panel = { mode: null, order: null, route: null };
+    state.panel = { mode: null, order: null, route: null, context: null };
     $("#overlay").classList.remove("open");
   }
 
@@ -386,6 +386,8 @@
       renderRouteCreateForm(header, body, footer);
     } else if (mode === "route-edit") {
       renderRouteEditForm(route, header, body, footer);
+    } else if (mode === "suburb-search") {
+      renderSuburbSearchPanel(header, body, footer);
     }
 
     // Wire close buttons (any .close-panel-btn)
@@ -818,6 +820,121 @@
     }
   }
 
+  // ---- Suburb delivery-day search ----
+
+  function renderSuburbSearchPanel(header, body, footer) {
+    header.innerHTML = `<h2>Check Delivery Days</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
+
+    body.innerHTML = `
+      <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:.85rem">
+        Search by suburb name or postcode to see regular delivery days and the
+        next available booking date, then select a date to start a new order.
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+        <input type="text" id="suburb-query"
+          placeholder="e.g. Fremantle or 6160"
+          style="flex:1;padding:.45rem .65rem;border:1px solid var(--border);
+                 border-radius:var(--radius);font-size:.85rem;background:var(--surface)">
+        <button class="btn btn-primary btn-sm" id="suburb-search-btn">Search</button>
+      </div>
+      <div id="suburb-results"></div>`;
+
+    footer.innerHTML = "";
+
+    const input   = body.querySelector("#suburb-query");
+    const btn     = body.querySelector("#suburb-search-btn");
+    const results = body.querySelector("#suburb-results");
+
+    async function doSearch() {
+      const q = input.value.trim();
+      if (!q) return;
+      btn.disabled = true;
+      btn.textContent = "Searching…";
+      results.innerHTML = `<div class="state-msg"><div class="spinner"></div></div>`;
+      try {
+        const data = await apiFetch(`/api/suburb-search?q=${encodeURIComponent(q)}`);
+        if (!data.length) {
+          results.innerHTML = `
+            <div class="state-msg">
+              <div class="icon">🔍</div>
+              <div>No suburbs found matching <strong>${escHtml(q)}</strong>.</div>
+            </div>`;
+          return;
+        }
+        results.innerHTML = data.map(suburbResultHTML).join("");
+        results.querySelectorAll("[data-book-date]").forEach(bookBtn => {
+          bookBtn.addEventListener("click", () => {
+            openPanel("create", null, null, { date: bookBtn.dataset.bookDate });
+          });
+        });
+      } catch (err) {
+        toast(err.message, "error");
+        results.innerHTML = "";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Search";
+      }
+    }
+
+    btn.addEventListener("click", doSearch);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+    input.focus();
+  }
+
+  function suburbResultHTML(s) {
+    const daysText  = s.delivery_days.length
+      ? s.delivery_days.join(", ")
+      : "No scheduled days";
+
+    const fridayArea = s.delivery_days.includes("Friday");
+    const monArea    = s.delivery_days.includes("Monday");
+    const wedNote    = (fridayArea || monArea)
+      ? `<div style="font-size:.73rem;color:var(--text-muted);margin-top:.15rem">
+           Wednesday deliveries follow ${fridayArea ? "Friday" : "Monday"}'s route
+           ${monArea && !fridayArea ? "(or this Wednesday when Monday is a public holiday)" : ""}
+         </div>`
+      : "";
+
+    const earliestBadge = s.earliest_label
+      ? `<span style="display:inline-flex;align-items:center;gap:.3rem;
+                      font-size:.75rem;background:var(--bg);border:1px solid var(--border);
+                      border-radius:var(--radius);padding:.2rem .5rem;margin-bottom:.6rem">
+           Next available&nbsp;<strong>${escHtml(s.earliest_label)}</strong>
+         </span>`
+      : `<span style="font-size:.75rem;color:var(--text-muted)">No upcoming dates found</span>`;
+
+    const slotBtns = s.upcoming_slots.map(slot =>
+      `<button class="btn btn-outline btn-sm"
+               data-book-date="${escAttr(slot.date)}"
+               style="font-size:.75rem;padding:.3rem .6rem">
+         ${escHtml(slot.label)}
+       </button>`
+    ).join("");
+
+    return `
+      <div style="border:1px solid var(--border);border-radius:var(--radius);
+                  padding:.75rem;margin-bottom:.75rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+          <strong style="font-size:.9rem">${escHtml(s.suburb)}</strong>
+          ${s.postcode
+            ? `<span class="badge badge-status" style="font-size:.68rem">${escHtml(s.postcode)}</span>`
+            : ""}
+        </div>
+        <div style="font-size:.78rem;margin-bottom:.2rem">
+          Regular delivery: <strong>${escHtml(daysText)}</strong>
+        </div>
+        ${wedNote}
+        <div style="margin:.55rem 0">${earliestBadge}</div>
+        ${slotBtns
+          ? `<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.35rem">
+               Select a date to begin booking:
+             </div>
+             <div style="display:flex;gap:.4rem;flex-wrap:wrap">${slotBtns}</div>`
+          : ""}
+      </div>`;
+  }
+
   // ---- Create form ----
 
   function renderCreateForm(header, body, footer) {
@@ -826,6 +943,13 @@
 
     body.innerHTML = orderFormHTML(null);
     attachItemsLogic(body);
+
+    // Pre-fill delivery date when opened from the suburb search panel
+    const prefillDate = state.panel.context?.date;
+    if (prefillDate) {
+      const dateEl = body.querySelector("#f-date");
+      if (dateEl) dateEl.value = prefillDate;
+    }
 
     footer.innerHTML = `
       <button class="btn btn-outline btn-sm close-panel-btn">Cancel</button>
@@ -1219,6 +1343,7 @@
 
     // Header actions
     $("#refresh-btn").addEventListener("click", loadOrders);
+    $("#delivery-check-btn").addEventListener("click", () => openPanel("suburb-search"));
     $("#new-route-btn").addEventListener("click", () => openPanel("route-create"));
     $("#new-order-btn").addEventListener("click", () => openPanel("create"));
 
