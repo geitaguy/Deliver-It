@@ -570,13 +570,17 @@
         </div>`;
       }).join("");
 
-      return `<div style="display:flex;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--border);align-items:flex-start">
-        <div style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:${bubbleBg};color:${bubbleColor};font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center">${escHtml(seqLabel)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:.82rem;font-weight:600;word-break:break-word">${escHtml(stop.address || "—")}${stopBadge}</div>
-          ${orderLines}
-        </div>
-      </div>`;
+      const bubble = `<div style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:${bubbleBg};color:${bubbleColor};font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center">${escHtml(seqLabel)}</div>`;
+      return `<details class="route-stop" open>
+        <summary>
+          ${bubble}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.82rem;font-weight:600;word-break:break-word">${escHtml(stop.address || "—")}${stopBadge}</div>
+          </div>
+          <span class="stop-chevron">▼</span>
+        </summary>
+        <div class="route-stop-orders">${orderLines}</div>
+      </details>`;
     }).join("");
 
     const addrCount  = stops.length;

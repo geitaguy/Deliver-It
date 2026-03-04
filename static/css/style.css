@@ -517,6 +517,34 @@ tbody tr.is-next-stop { background: var(--bg); }
 .badge-current-stop { background: #f59e0b; color: #fff; }
 .badge-next-stop    { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 
+/* Collapsible route stops */
+.route-stop {
+  border-bottom: 1px solid var(--border);
+}
+.route-stop > summary {
+  display: flex;
+  gap: .75rem;
+  padding: .6rem 0;
+  cursor: pointer;
+  align-items: flex-start;
+  list-style: none;
+  user-select: none;
+}
+.route-stop > summary::-webkit-details-marker { display: none; }
+.route-stop > summary .stop-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: .65rem;
+  color: var(--text-muted);
+  transition: transform .15s;
+  padding-top: .2rem;
+}
+.route-stop:not([open]) > summary .stop-chevron { transform: rotate(-90deg); }
+.route-stop-orders {
+  padding-left: calc(24px + .75rem);
+  padding-bottom: .4rem;
+}
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {
