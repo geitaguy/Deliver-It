@@ -6,10 +6,11 @@ Track-POD is the source of truth. This app:
   • Highlights orders that originated in Track-POD and have not yet been
     viewed / actioned inside Deliver-It.
   • Allows creating and updating orders via the Track-POD API.
+  • Provides suburb delivery-day lookup with operational override management.
 """
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from flask import Flask, jsonify, render_template, request, abort
 from dotenv import load_dotenv
 
@@ -22,6 +23,10 @@ load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-production")
 
+_EXCEL_PATH = os.path.join(
+    os.path.dirname(__file__), "data", "Delivery Days by Suburb.xlsx"
+)
+
 
 def _client() -> TrackPodClient:
     api_key = os.environ.get("TRACK_POD_API_KEY", "")
@@ -32,11 +37,19 @@ def _client() -> TrackPodClient:
 
 with app.app_context():
     db.init_db()
-    _loaded = delivery_data.load()
-    if _loaded:
-        app.logger.info("Delivery data: %d suburbs loaded.", _loaded)
+
+    # Auto-import suburb data from Excel into SQLite on first run (or if DB is empty).
+    if db.count_suburbs() == 0:
+        n = db.import_suburbs_from_excel(_EXCEL_PATH)
+        if n:
+            app.logger.info("Suburb data: imported %d suburbs from Excel.", n)
+        else:
+            app.logger.warning(
+                "Suburb data: no data imported — spreadsheet not found or empty. "
+                "Expected: %s", _EXCEL_PATH
+            )
     else:
-        app.logger.warning("Delivery data: spreadsheet not found or empty.")
+        app.logger.info("Suburb data: %d suburbs in database.", db.count_suburbs())
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +184,7 @@ def mark_viewed(order_number: str):
 
 
 # ---------------------------------------------------------------------------
-# JSON API — Routes
+# JSON API — Routes (Track-POD)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/routes", methods=["GET"])
@@ -233,7 +246,8 @@ def assign_order_to_route(route_code: str, order_number: str):
 @app.route("/api/suburb-search")
 def suburb_search():
     """
-    Search for a suburb by name or postcode and return delivery day information.
+    Search for a suburb by name or postcode and return delivery day information
+    with upcoming slots (override-aware).
 
     Query params:
       q   Suburb name or postcode (partial match, case-insensitive)
@@ -241,13 +255,106 @@ def suburb_search():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify([])
-    return jsonify(delivery_data.search(q))
+
+    today     = date.today()
+    horizon   = (today + timedelta(days=180)).isoformat()
+    suburbs   = db.search_suburbs(q)
+    overrides = db.get_route_overrides(today.isoformat(), horizon)
+
+    _DAY_ORDER = delivery_data._DAY_ORDER
+
+    results = []
+    for s in suburbs:
+        delivery_days = {
+            day for day in delivery_data.ROUTING_AREAS
+            if s[day.lower()]
+        }
+        slots = delivery_data.upcoming_slots(
+            delivery_days, n=4, from_date=today, overrides=overrides
+        )
+        days_sorted = sorted(
+            delivery_days,
+            key=lambda d: _DAY_ORDER.index(d) if d in _DAY_ORDER else 99,
+        )
+        # "Earliest available" = 2nd valid route from today
+        earliest_idx = 1 if len(slots) >= 2 else (0 if slots else None)
+        results.append(
+            {
+                "suburb":         s["suburb"],
+                "postcode":       s["postcode"],
+                "delivery_days":  days_sorted,
+                "earliest_date":  slots[earliest_idx]["date"]  if earliest_idx is not None else None,
+                "earliest_label": slots[earliest_idx]["label"] if earliest_idx is not None else None,
+                "upcoming_slots": slots,
+            }
+        )
+
+    return jsonify(results)
 
 
 @app.route("/api/wa-holidays")
 def wa_holidays():
     """Return the list of WA public holidays known to the system."""
     return jsonify(sorted(d.isoformat() for d in delivery_data.WA_HOLIDAYS))
+
+
+# ---------------------------------------------------------------------------
+# JSON API — Route availability overrides
+# ---------------------------------------------------------------------------
+
+@app.route("/api/route-overrides", methods=["GET"])
+def list_route_overrides():
+    """
+    List route overrides, optionally filtered to a date range.
+
+    Query params:
+      from   YYYY-MM-DD  (inclusive start)
+      to     YYYY-MM-DD  (inclusive end)
+    """
+    from_date = request.args.get("from")
+    to_date   = request.args.get("to")
+    return jsonify(db.get_route_overrides(from_date, to_date))
+
+
+@app.route("/api/route-overrides", methods=["POST"])
+def create_route_override():
+    """
+    Create or update a route override for a specific (date, routing_area).
+
+    Body JSON:
+      date             YYYY-MM-DD   required
+      routing_area     str          required — Monday/Tuesday/Thursday/Friday
+      status           str          required — cancelled/full/rescheduled
+      rescheduled_date YYYY-MM-DD   required when status=rescheduled
+      message          str          optional custom message shown to staff
+    """
+    body = request.get_json(force=True, silent=True) or {}
+
+    date_val         = (body.get("date")             or "").strip()
+    routing_area     = (body.get("routing_area")     or "").strip()
+    status           = (body.get("status")           or "").strip()
+    rescheduled_date = (body.get("rescheduled_date") or "").strip() or None
+    message          = (body.get("message")          or "").strip() or None
+
+    if not date_val:
+        return jsonify({"error": "date is required."}), 400
+    if routing_area not in db.ROUTING_AREAS:
+        return jsonify({"error": f"routing_area must be one of {sorted(db.ROUTING_AREAS)}."}), 400
+    if status not in db.VALID_STATUSES:
+        return jsonify({"error": f"status must be one of {sorted(db.VALID_STATUSES)}."}), 400
+    if status == "rescheduled" and not rescheduled_date:
+        return jsonify({"error": "rescheduled_date is required when status is 'rescheduled'."}), 400
+
+    result = db.upsert_route_override(date_val, routing_area, status, rescheduled_date, message)
+    return jsonify(result), 201
+
+
+@app.route("/api/route-overrides/<int:override_id>", methods=["DELETE"])
+def delete_route_override(override_id: int):
+    """Remove a route override by its database ID."""
+    if not db.delete_route_override(override_id):
+        return jsonify({"error": "Override not found."}), 404
+    return jsonify({"success": True})
 
 
 # ---------------------------------------------------------------------------

@@ -388,6 +388,8 @@
       renderRouteEditForm(route, header, body, footer);
     } else if (mode === "suburb-search") {
       renderSuburbSearchPanel(header, body, footer);
+    } else if (mode === "route-availability") {
+      renderRouteAvailabilityPanel(header, body, footer);
     }
 
     // Wire close buttons (any .close-panel-btn)
@@ -883,34 +885,49 @@
   }
 
   function suburbResultHTML(s) {
-    const daysText  = s.delivery_days.length
-      ? s.delivery_days.join(", ")
-      : "No scheduled days";
-
+    const daysText   = s.delivery_days.length ? s.delivery_days.join(", ") : "No scheduled days";
     const fridayArea = s.delivery_days.includes("Friday");
     const monArea    = s.delivery_days.includes("Monday");
-    const wedNote    = (fridayArea || monArea)
+
+    const wedNote = (fridayArea || monArea)
       ? `<div style="font-size:.73rem;color:var(--text-muted);margin-top:.15rem">
            Wednesday deliveries follow ${fridayArea ? "Friday" : "Monday"}'s route
            ${monArea && !fridayArea ? "(or this Wednesday when Monday is a public holiday)" : ""}
-         </div>`
-      : "";
+         </div>` : "";
 
     const earliestBadge = s.earliest_label
-      ? `<span style="display:inline-flex;align-items:center;gap:.3rem;
-                      font-size:.75rem;background:var(--bg);border:1px solid var(--border);
+      ? `<span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;
+                      background:var(--bg);border:1px solid var(--border);
                       border-radius:var(--radius);padding:.2rem .5rem;margin-bottom:.6rem">
            Next available&nbsp;<strong>${escHtml(s.earliest_label)}</strong>
          </span>`
       : `<span style="font-size:.75rem;color:var(--text-muted)">No upcoming dates found</span>`;
 
-    const slotBtns = s.upcoming_slots.map(slot =>
-      `<button class="btn btn-outline btn-sm"
-               data-book-date="${escAttr(slot.date)}"
-               style="font-size:.75rem;padding:.3rem .6rem">
-         ${escHtml(slot.label)}
-       </button>`
-    ).join("");
+    const slotBtns = s.upcoming_slots.map(slot => {
+      if (slot.full) {
+        // Full — show disabled button with message tooltip
+        const title = slot.message ? `title="${escAttr(slot.message)}"` : "";
+        return `<button class="btn btn-sm" disabled ${title}
+                  style="font-size:.75rem;padding:.3rem .6rem;opacity:.65;cursor:not-allowed;
+                         background:var(--bg);border:1px solid var(--border);color:var(--text-muted)">
+                  ${escHtml(slot.label)}&nbsp;<span style="color:#c05;font-size:.65rem">Full</span>
+                </button>`;
+      }
+      if (slot.rescheduled_from) {
+        // Rescheduled — bookable, but flagged
+        const msg = slot.message ? ` · ${slot.message}` : "";
+        return `<button class="btn btn-outline btn-sm" data-book-date="${escAttr(slot.date)}"
+                  style="font-size:.75rem;padding:.3rem .6rem;border-style:dashed"
+                  title="Rescheduled from ${escAttr(slot.rescheduled_from)}${escAttr(msg)}">
+                  ${escHtml(slot.label)}&nbsp;<span style="font-size:.65rem;opacity:.7">↩</span>
+                </button>`;
+      }
+      // Normal bookable slot
+      return `<button class="btn btn-outline btn-sm" data-book-date="${escAttr(slot.date)}"
+                style="font-size:.75rem;padding:.3rem .6rem">
+                ${escHtml(slot.label)}
+              </button>`;
+    }).join("");
 
     return `
       <div style="border:1px solid var(--border);border-radius:var(--radius);
@@ -933,6 +950,162 @@
              <div style="display:flex;gap:.4rem;flex-wrap:wrap">${slotBtns}</div>`
           : ""}
       </div>`;
+  }
+
+  // ---- Route availability management ----
+
+  function renderRouteAvailabilityPanel(header, body, footer) {
+    header.innerHTML = `<h2>Route Availability</h2>
+      <button class="btn btn-ghost btn-sm close-panel-btn">✕</button>`;
+    footer.innerHTML = "";
+
+    const today = new Date().toISOString().slice(0, 10);
+    const horizon = shiftDate(today, 60);
+
+    async function load() {
+      body.innerHTML = `<div class="state-msg"><div class="spinner"></div></div>`;
+      let overrides = [];
+      try {
+        overrides = await apiFetch(`/api/route-overrides?from=${today}&to=${horizon}`);
+      } catch (err) {
+        toast(err.message, "error");
+      }
+      renderAvailabilityBody(overrides);
+    }
+
+    function renderAvailabilityBody(overrides) {
+      const STATUS_LABELS = { cancelled: "Cancelled", full: "Full", rescheduled: "Rescheduled" };
+      const STATUS_COLORS = {
+        cancelled:   "color:#b91c1c;background:#fef2f2;border-color:#fecaca",
+        full:        "color:#92400e;background:#fffbeb;border-color:#fde68a",
+        rescheduled: "color:#1e40af;background:#eff6ff;border-color:#bfdbfe",
+      };
+
+      const listHTML = overrides.length
+        ? overrides.map(ov => {
+            const statusStyle = STATUS_COLORS[ov.status] || "";
+            const reschedLine = ov.rescheduled_date
+              ? `<span style="font-size:.72rem;color:var(--text-muted)"> → ${escHtml(ov.rescheduled_date)}</span>`
+              : "";
+            const msgLine = ov.message
+              ? `<div style="font-size:.73rem;color:var(--text-muted);margin-top:.15rem;font-style:italic">"${escHtml(ov.message)}"</div>`
+              : "";
+            return `
+              <div style="display:flex;align-items:flex-start;gap:.6rem;padding:.55rem 0;
+                          border-bottom:1px solid var(--border)">
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:.82rem;font-weight:600">${escHtml(ov.date)}</div>
+                  <div style="font-size:.78rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.15rem">
+                    <span style="font-weight:500">${escHtml(ov.routing_area)} area</span>
+                    <span class="badge" style="font-size:.68rem;${escAttr(statusStyle)}">
+                      ${escHtml(STATUS_LABELS[ov.status] || ov.status)}
+                    </span>
+                    ${reschedLine}
+                  </div>
+                  ${msgLine}
+                </div>
+                <button class="btn btn-ghost btn-sm del-override-btn"
+                        data-id="${escAttr(String(ov.id))}"
+                        style="font-size:.75rem;padding:.2rem .45rem;color:var(--text-muted);flex-shrink:0"
+                        title="Remove override">✕</button>
+              </div>`;
+          }).join("")
+        : `<p style="font-size:.82rem;color:var(--text-muted);padding:.5rem 0">
+             No overrides in the next 60 days.
+           </p>`;
+
+      body.innerHTML = `
+        <div class="section-title" style="margin-bottom:.6rem">Add Override</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.4rem">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.75rem">Date</label>
+            <input type="date" id="ov-date" value="${escAttr(today)}" min="${escAttr(today)}">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.75rem">Routing Area</label>
+            <select id="ov-area">
+              <option value="Monday">Monday</option>
+              <option value="Tuesday">Tuesday</option>
+              <option value="Thursday">Thursday</option>
+              <option value="Friday">Friday</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.75rem">Status</label>
+            <select id="ov-status">
+              <option value="cancelled">Cancelled</option>
+              <option value="full">Full</option>
+              <option value="rescheduled">Rescheduled</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0" id="ov-reschedule-wrap">
+            <label style="font-size:.75rem">Rescheduled to</label>
+            <input type="date" id="ov-reschedule-date" min="${escAttr(today)}">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:.6rem">
+          <label style="font-size:.75rem">Message (optional)</label>
+          <input type="text" id="ov-message" placeholder="e.g. Truck unavailable"
+                 style="width:100%;box-sizing:border-box">
+        </div>
+        <button class="btn btn-primary btn-sm" id="ov-add-btn" style="margin-bottom:1.25rem">
+          + Add Override
+        </button>
+
+        <div class="section-title" style="margin-bottom:.4rem">
+          Upcoming Overrides <span style="font-weight:400;font-size:.75rem;color:var(--text-muted)">(next 60 days)</span>
+        </div>
+        <div id="ov-list">${listHTML}</div>`;
+
+      // Toggle rescheduled_date field
+      const statusSel = body.querySelector("#ov-status");
+      const reschedWrap = body.querySelector("#ov-reschedule-wrap");
+      function syncRescheduleField() {
+        reschedWrap.style.display = statusSel.value === "rescheduled" ? "" : "none";
+      }
+      syncRescheduleField();
+      statusSel.addEventListener("change", syncRescheduleField);
+
+      // Add override
+      body.querySelector("#ov-add-btn").addEventListener("click", async () => {
+        const payload = {
+          date:             body.querySelector("#ov-date").value,
+          routing_area:     body.querySelector("#ov-area").value,
+          status:           body.querySelector("#ov-status").value,
+          rescheduled_date: body.querySelector("#ov-reschedule-date").value || null,
+          message:          body.querySelector("#ov-message").value.trim() || null,
+        };
+        if (!payload.date) { toast("Date is required.", "error"); return; }
+        const btn = body.querySelector("#ov-add-btn");
+        btn.disabled = true; btn.textContent = "Adding…";
+        try {
+          await apiFetch("/api/route-overrides", { method: "POST", body: JSON.stringify(payload) });
+          toast("Override added.", "success");
+          load();
+        } catch (err) {
+          toast(err.message, "error");
+          btn.disabled = false; btn.textContent = "+ Add Override";
+        }
+      });
+
+      // Delete overrides
+      body.querySelectorAll(".del-override-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          btn.disabled = true;
+          try {
+            await apiFetch(`/api/route-overrides/${id}`, { method: "DELETE" });
+            toast("Override removed.", "success");
+            load();
+          } catch (err) {
+            toast(err.message, "error");
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    load();
   }
 
   // ---- Create form ----
@@ -1344,6 +1517,7 @@
     // Header actions
     $("#refresh-btn").addEventListener("click", loadOrders);
     $("#delivery-check-btn").addEventListener("click", () => openPanel("suburb-search"));
+    $("#availability-btn").addEventListener("click", () => openPanel("route-availability"));
     $("#new-route-btn").addEventListener("click", () => openPanel("route-create"));
     $("#new-order-btn").addEventListener("click", () => openPanel("create"));
 
