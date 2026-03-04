@@ -261,8 +261,6 @@ def suburb_search():
     suburbs   = db.search_suburbs(q)
     overrides = db.get_route_overrides(today.isoformat(), horizon)
 
-    _DAY_ORDER = delivery_data._DAY_ORDER
-
     results = []
     for s in suburbs:
         delivery_days = {
@@ -274,7 +272,7 @@ def suburb_search():
         )
         days_sorted = sorted(
             delivery_days,
-            key=lambda d: _DAY_ORDER.index(d) if d in _DAY_ORDER else 99,
+            key=lambda d: delivery_data.DAY_ORDER.index(d) if d in delivery_data.DAY_ORDER else 99,
         )
         # "Earliest available" = 2nd valid route from today
         earliest_idx = 1 if len(slots) >= 2 else (0 if slots else None)
@@ -294,8 +292,16 @@ def suburb_search():
 
 @app.route("/api/wa-holidays")
 def wa_holidays():
-    """Return the list of WA public holidays known to the system."""
-    return jsonify(sorted(d.isoformat() for d in delivery_data.WA_HOLIDAYS))
+    """
+    Return WA public holidays as {date: name} for the current and next year.
+    Accepts an optional ?year= query param to target a specific year.
+    """
+    try:
+        year = int(request.args.get("year", 0))
+        years = [year] if year else [date.today().year, date.today().year + 1]
+    except ValueError:
+        return jsonify({"error": "year must be an integer"}), 400
+    return jsonify(delivery_data.wa_holidays_for_years(years))
 
 
 # ---------------------------------------------------------------------------

@@ -11,61 +11,62 @@ The four canonical routing areas are: Monday, Tuesday, Thursday, Friday.
 
 Western Australia public holidays
 ----------------------------------
-Hardcoded for 2025-2027. Update WA_HOLIDAYS annually as dates are gazetted.
+Sourced from the `holidays` package (AU/WA).  One correction is applied:
+WA officially observes Easter Saturday, but the package includes Easter Sunday
+instead — so Easter Sunday is dropped and Easter Saturday (Good Friday + 1) is
+added.  All other dates (Labour Day, King's Birthday, observed days, etc.) are
+generated automatically and stay up-to-date without manual maintenance.
 """
 
 from __future__ import annotations
 
 from datetime import date, timedelta
+from functools import lru_cache
+
+import holidays as _holidays_pkg
 
 # ---------------------------------------------------------------------------
 # WA Public Holidays
 # ---------------------------------------------------------------------------
 
-WA_HOLIDAYS: frozenset[date] = frozenset(
-    {
-        # 2025
-        date(2025,  1,  1),  # New Year's Day
-        date(2025,  1, 27),  # Australia Day (observed; 26 Jan is Sunday)
-        date(2025,  4, 18),  # Good Friday
-        date(2025,  4, 19),  # Easter Saturday
-        date(2025,  4, 21),  # Easter Monday
-        date(2025,  4, 25),  # Anzac Day
-        date(2025,  6,  2),  # Western Australia Day
-        date(2025,  9, 22),  # Queen's Birthday (WA — last Mon September)
-        date(2025, 12, 25),  # Christmas Day
-        date(2025, 12, 26),  # Boxing Day
-        # 2026
-        date(2026,  1,  1),  # New Year's Day
-        date(2026,  1, 26),  # Australia Day
-        date(2026,  4,  3),  # Good Friday
-        date(2026,  4,  4),  # Easter Saturday
-        date(2026,  4,  6),  # Easter Monday
-        date(2026,  4, 25),  # Anzac Day
-        date(2026,  6,  1),  # Western Australia Day
-        date(2026,  9, 28),  # Queen's Birthday (WA — last Mon September)
-        date(2026, 12, 25),  # Christmas Day
-        date(2026, 12, 28),  # Boxing Day (observed; 26 Dec is Saturday)
-        # 2027
-        date(2027,  1,  1),  # New Year's Day
-        date(2027,  1, 26),  # Australia Day
-        date(2027,  3, 26),  # Good Friday
-        date(2027,  3, 27),  # Easter Saturday
-        date(2027,  3, 29),  # Easter Monday
-        date(2027,  4, 26),  # Anzac Day (observed; 25 Apr is Sunday)
-        date(2027,  6,  7),  # Western Australia Day
-        date(2027,  9, 27),  # Queen's Birthday (WA — last Mon September)
-        date(2027, 12, 27),  # Christmas Day (observed; 25 Dec is Saturday)
-        date(2027, 12, 28),  # Boxing Day (observed; 26 Dec is Sunday)
-    }
-)
+@lru_cache(maxsize=16)
+def _wa_holidays_for_year(year: int) -> frozenset[date]:
+    """
+    Return WA public holidays for *year* as a frozenset of dates.
 
-_DAY_ORDER   = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-ROUTING_AREAS = ["Monday", "Tuesday", "Thursday", "Friday"]   # canonical areas (no Wednesday)
+    The `holidays` package includes Easter Sunday for WA, which is incorrect —
+    WA observes Easter Saturday instead.  We swap them here.
+    """
+    raw = _holidays_pkg.country_holidays("AU", subdiv="WA", years=year)
+    result: set[date] = set(raw.keys())
+
+    # Replace Easter Sunday with Easter Saturday
+    easter_sundays = {d for d, name in raw.items() if name == "Easter Sunday"}
+    result -= easter_sundays
+    result |= {d + timedelta(days=-1) for d in easter_sundays}  # Saturday = Sunday - 1
+
+    return frozenset(result)
 
 
 def is_wa_holiday(d: date) -> bool:
-    return d in WA_HOLIDAYS
+    return d in _wa_holidays_for_year(d.year)
+
+
+def wa_holidays_for_years(years: list[int]) -> dict[str, str]:
+    """Return {ISO-date: name} for the requested years, with the Easter fix applied."""
+    result: dict[str, str] = {}
+    for year in years:
+        raw = _holidays_pkg.country_holidays("AU", subdiv="WA", years=year)
+        for d, name in raw.items():
+            if name == "Easter Sunday":
+                result[(d + timedelta(days=-1)).isoformat()] = "Easter Saturday"
+            else:
+                result[d.isoformat()] = name
+    return result
+
+
+DAY_ORDER     = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+ROUTING_AREAS = ["Monday", "Tuesday", "Thursday", "Friday"]   # canonical areas (no Wednesday)
 
 
 def _week_monday(d: date) -> date:
