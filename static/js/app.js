@@ -513,6 +513,73 @@
 
   // ---- Route panels ----
 
+  function routeStopsHTML(routeCode, routeStatus) {
+    const orders = state.orders.filter(o => o.RouteNumber === routeCode);
+    if (!orders.length) return "";
+
+    // Group by address (case-insensitive key, preserve original text)
+    const addrMap = new Map();
+    for (const o of orders) {
+      const key = (o.Address || "").trim().toLowerCase();
+      if (!addrMap.has(key)) addrMap.set(key, { address: (o.Address || "").trim(), orders: [] });
+      addrMap.get(key).orders.push(o);
+    }
+
+    // Sort each group by SeqNumber, then sort groups by their first SeqNumber
+    const stops = [...addrMap.values()];
+    stops.forEach(s => s.orders.sort((a, b) => (a.SeqNumber ?? 9999) - (b.SeqNumber ?? 9999)));
+    stops.sort((a, b) => (a.orders[0].SeqNumber ?? 9999) - (b.orders[0].SeqNumber ?? 9999));
+
+    // For InProgress routes reuse stopLabels to find current/next stop per order
+    const labels = routeStatus === "InProgress" ? stopLabels(orders) : new Map();
+
+    const rows = stops.map((stop, idx) => {
+      const seqNum   = stop.orders[0].SeqNumber;
+      const seqLabel = seqNum != null ? String(seqNum) : String(idx + 1);
+
+      // A stop is "current" if any of its orders is the current stop
+      const stopLabel = stop.orders.map(o => labels.get(o.Number || o.Id)).find(Boolean) || "";
+      const isCurrent = stopLabel === "current";
+      const isNext    = stopLabel === "next";
+
+      const bubbleBg    = isCurrent ? "#f59e0b"          : "var(--brand-light)";
+      const bubbleColor = isCurrent ? "#fff"              : "var(--brand)";
+      const stopBadge   = isCurrent
+        ? '<span class="badge badge-current-stop" style="margin-left:.4rem">▶ Now</span>'
+        : isNext
+          ? '<span class="badge badge-next-stop" style="margin-left:.4rem">Next</span>'
+          : "";
+
+      const orderLines = stop.orders.map(o => {
+        const num    = o.Number || o.Id || "—";
+        const client = o.Client || "";
+        const status = o.Status || "Unassigned";
+        return `<div style="font-size:.78rem;margin-top:.25rem;display:flex;align-items:center;gap:.35rem;flex-wrap:wrap">
+          <strong>${escHtml(num)}</strong>
+          ${client ? `<span style="color:var(--text-muted)">${escHtml(client)}</span>` : ""}
+          <span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span>
+        </div>`;
+      }).join("");
+
+      return `<div style="display:flex;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--border);align-items:flex-start">
+        <div style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:${bubbleBg};color:${bubbleColor};font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center">${escHtml(seqLabel)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.82rem;font-weight:600;word-break:break-word">${escHtml(stop.address || "—")}${stopBadge}</div>
+          ${orderLines}
+        </div>
+      </div>`;
+    }).join("");
+
+    const addrCount  = stops.length;
+    const orderCount = orders.length;
+    const summary    = addrCount === orderCount
+      ? `${orderCount} order${orderCount !== 1 ? "s" : ""}`
+      : `${addrCount} stop${addrCount !== 1 ? "s" : ""}, ${orderCount} order${orderCount !== 1 ? "s" : ""}`;
+
+    return `<div class="section-title" style="margin-top:1.25rem">Stops · ${summary}</div>
+      <div>${rows}</div>`;
+  }
+
   function renderRouteViewPanel(route, header, body, footer) {
     const code   = route.Code || "—";
     const status = route.Status || "";
@@ -534,6 +601,7 @@
         ${detailField("Depot",         route.Depot)}
         ${detailField("Planned Start", route.StartTimePlan ? String(route.StartTimePlan).replace(/^(\d{4}-\d{2}-\d{2}T)/, "").slice(0, 5) : null)}
       </div>
+      ${routeStopsHTML(route.Code, status)}
       ${unassigned.length ? `
         <div class="section-title" style="margin-top:1.25rem">Add Unassigned Orders</div>
         <div>
