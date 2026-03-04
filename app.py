@@ -23,7 +23,7 @@ load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-production")
 
-_EXCEL_FILENAME = "Delivery Days by Suburb.xlsx"
+_EXCEL_FILENAME = "Delivery Days by Suburb Updated.xlsx"
 _EXCEL_PATH = next(
     (
         p for p in [
