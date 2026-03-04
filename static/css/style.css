@@ -545,10 +545,102 @@ tbody tr.is-next-stop { background: var(--bg); }
   padding-bottom: .4rem;
 }
 
+/* ---- Filter nav ---- */
+
+.filter-nav {
+  display: flex;
+  gap: .5rem;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {
+  /* Header */
+  .app-header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: .5rem .75rem;
+    gap: .4rem;
+  }
+  .app-header .subtitle { display: none; }
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: .35rem;
+  }
+  .header-actions .btn-sm {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 0;
+    padding: .45rem .5rem;
+  }
+
+  /* Layout */
+  .container { padding: .75rem; }
+
+  /* Filters */
+  .filters { flex-direction: column; align-items: stretch; }
+  .filter-group { width: 100%; }
+  .filter-nav {
+    display: flex;
+    gap: .35rem;
+    margin-left: 0;
+    width: 100%;
+  }
+  .filter-nav .btn { flex: 1; justify-content: center; }
+
+  /* Card header */
+  .card-header { flex-direction: column; align-items: flex-start; gap: .5rem; }
+  .card-header > div { align-self: flex-end; }
+  .card-header > div > p { display: none; }
+
+  /* Orders table — hide less-critical columns */
+  table thead th:nth-child(1),
+  table tbody td:nth-child(1),
+  table thead th:nth-child(4),
+  table tbody td:nth-child(4),
+  table thead th:nth-child(5),
+  table tbody td:nth-child(5) { display: none; }
+
+  /* Forms */
   .form-grid { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
-  .filters { flex-direction: column; align-items: stretch; }
+
+  /* Slide-over → bottom sheet */
+  .overlay {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+  .slide-panel {
+    width: 100%;
+    height: 90dvh;
+    height: 90vh;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.2);
+    animation: slideUp .25s ease;
+  }
+  .slide-panel::before {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    margin: .6rem auto 0;
+    flex-shrink: 0;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  /* Toast — full width */
+  #toast { left: .75rem; right: .75rem; bottom: 1rem; }
+  .toast-msg { max-width: 100%; }
+
+  /* Buttons — larger tap targets */
+  .btn-sm { min-height: 36px; }
 }

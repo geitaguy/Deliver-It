@@ -23,8 +23,16 @@ load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-production")
 
-_EXCEL_PATH = os.path.join(
-    os.path.dirname(__file__), "data", "Delivery Days by Suburb.xlsx"
+_EXCEL_FILENAME = "Delivery Days by Suburb.xlsx"
+_EXCEL_PATH = next(
+    (
+        p for p in [
+            os.path.join(os.path.dirname(__file__), _EXCEL_FILENAME),
+            os.path.join(os.path.dirname(__file__), "data", _EXCEL_FILENAME),
+        ]
+        if os.path.exists(p)
+    ),
+    os.path.join(os.path.dirname(__file__), "data", _EXCEL_FILENAME),
 )
 
 
@@ -38,18 +46,15 @@ def _client() -> TrackPodClient:
 with app.app_context():
     db.init_db()
 
-    # Auto-import suburb data from Excel into SQLite on first run (or if DB is empty).
-    if db.count_suburbs() == 0:
-        n = db.import_suburbs_from_excel(_EXCEL_PATH)
-        if n:
-            app.logger.info("Suburb data: imported %d suburbs from Excel.", n)
-        else:
-            app.logger.warning(
-                "Suburb data: no data imported — spreadsheet not found or empty. "
-                "Expected: %s", _EXCEL_PATH
-            )
+    # Always import suburb data from Excel so the live spreadsheet stays in sync.
+    n = db.import_suburbs_from_excel(_EXCEL_PATH)
+    if n:
+        app.logger.info("Suburb data: imported %d suburbs from %s.", n, _EXCEL_PATH)
     else:
-        app.logger.info("Suburb data: %d suburbs in database.", db.count_suburbs())
+        app.logger.warning(
+            "Suburb data: no data imported — spreadsheet not found or empty. "
+            "Expected: %s", _EXCEL_PATH
+        )
 
 
 # ---------------------------------------------------------------------------

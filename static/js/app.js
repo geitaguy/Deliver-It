@@ -1025,13 +1025,13 @@
 
       body.innerHTML = `
         <div class="section-title" style="margin-bottom:.6rem">Add Override</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.4rem">
-          <div class="form-group" style="margin:0">
-            <label style="font-size:.75rem">Date</label>
+        <div class="form-grid" style="margin-bottom:.4rem">
+          <div class="form-group">
+            <label>Date</label>
             <input type="date" id="ov-date" value="${escAttr(today)}" min="${escAttr(today)}">
           </div>
-          <div class="form-group" style="margin:0">
-            <label style="font-size:.75rem">Routing Area</label>
+          <div class="form-group">
+            <label>Routing Area</label>
             <select id="ov-area">
               <option value="Monday">Monday</option>
               <option value="Tuesday">Tuesday</option>
@@ -1039,8 +1039,8 @@
               <option value="Friday">Friday</option>
             </select>
           </div>
-          <div class="form-group" style="margin:0">
-            <label style="font-size:.75rem">Status</label>
+          <div class="form-group">
+            <label>Status</label>
             <select id="ov-status">
               <option value="cancelled">Cancelled</option>
               <option value="full">Full</option>
@@ -1048,15 +1048,14 @@
               <option value="rescheduled">Rescheduled</option>
             </select>
           </div>
-          <div class="form-group" style="margin:0" id="ov-reschedule-wrap">
-            <label style="font-size:.75rem">Rescheduled to</label>
+          <div class="form-group" id="ov-reschedule-wrap">
+            <label>Rescheduled to</label>
             <input type="date" id="ov-reschedule-date" min="${escAttr(today)}">
           </div>
         </div>
         <div class="form-group" style="margin-bottom:.6rem">
-          <label style="font-size:.75rem">Message<span class="required">*</span></label>
-          <input type="text" id="ov-message" placeholder="e.g. Truck unavailable — deliveries cancelled"
-                 style="width:100%;box-sizing:border-box">
+          <label>Message<span class="required">*</span></label>
+          <input type="text" id="ov-message" placeholder="e.g. Truck unavailable — deliveries cancelled">
         </div>
         <button class="btn btn-primary btn-sm" id="ov-add-btn" style="margin-bottom:1.25rem">
           + Add Override
