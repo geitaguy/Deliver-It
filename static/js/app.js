@@ -530,17 +530,26 @@
     stops.forEach(s => s.orders.sort((a, b) => (a.SeqNumber ?? 9999) - (b.SeqNumber ?? 9999)));
     stops.sort((a, b) => (a.orders[0].SeqNumber ?? 9999) - (b.orders[0].SeqNumber ?? 9999));
 
-    // For InProgress routes reuse stopLabels to find current/next stop per order
-    const labels = routeStatus === "InProgress" ? stopLabels(orders) : new Map();
+    // For InProgress routes: label at the STOP level (not per-order) so that a
+    // stop with multiple orders can never receive both "current" and "next".
+    // A stop is pending when at least one of its orders is not completed/failed.
+    if (routeStatus === "InProgress") {
+      const pendingStops = stops.filter(s =>
+        s.orders.some(o => {
+          const cat = statusCategory(o.Status || "");
+          return cat !== "completed" && cat !== "failed";
+        })
+      );
+      if (pendingStops[0]) pendingStops[0]._label = "current";
+      if (pendingStops[1]) pendingStops[1]._label = "next";
+    }
 
     const rows = stops.map((stop, idx) => {
       const seqNum   = stop.orders[0].SeqNumber;
       const seqLabel = seqNum != null ? String(seqNum) : String(idx + 1);
 
-      // A stop is "current" if any of its orders is the current stop
-      const stopLabel = stop.orders.map(o => labels.get(o.Number || o.Id)).find(Boolean) || "";
-      const isCurrent = stopLabel === "current";
-      const isNext    = stopLabel === "next";
+      const isCurrent = stop._label === "current";
+      const isNext    = stop._label === "next";
 
       const bubbleBg    = isCurrent ? "#f59e0b"          : "var(--brand-light)";
       const bubbleColor = isCurrent ? "#fff"              : "var(--brand)";
