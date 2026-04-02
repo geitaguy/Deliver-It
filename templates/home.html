@@ -182,7 +182,7 @@
       const isPast    = iso < today || (isToday && todayDone);
 
       let classes = "cal-cell";
-      if (isToday && !todayDone) classes += " cal-today";
+      if (isToday)   classes += " cal-today";
       if (isPast)    classes += " cal-past";
       if (isWeekend) classes += " cal-weekend";
       if (holiday)   classes += " cal-holiday";
