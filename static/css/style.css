@@ -610,10 +610,16 @@ a.cal-cell:hover { background: var(--brand-light); }
 
 .cal-cell-empty { background: var(--bg); }
 .cal-weekend    { background: var(--bg); }
-.cal-holiday    { background: #fffbeb; }
+.cal-holiday    { background: var(--bg); }
 
-.cal-past .cal-day-num { color: var(--text-muted); }
-.cal-past .cal-chip    { opacity: .55; }
+/* Dim past days, weekends, and holidays */
+.cal-past .cal-day-num,
+.cal-weekend .cal-day-num,
+.cal-holiday .cal-day-num { color: var(--text-muted); }
+
+.cal-past .cal-chip,
+.cal-weekend .cal-chip,
+.cal-holiday .cal-chip    { opacity: .45; }
 
 .cal-today { background: var(--brand-light) !important; }
 .cal-today .cal-day-num {

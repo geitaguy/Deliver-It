@@ -120,22 +120,37 @@
     const grid = document.getElementById("cal-grid");
     grid.innerHTML = '<div class="cal-loading"><div class="spinner"></div></div>';
 
-    let data;
-    try {
-      const res = await fetch(`/api/calendar?year=${calYear}&month=${calMonth}`);
-      if (!res.ok) throw new Error(res.statusText);
-      data = await res.json();
-    } catch (e) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    // Fetch calendar data and (for the current month) today's routes in parallel
+    const isCurrentMonth = calYear === new Date().getFullYear()
+                        && calMonth === new Date().getMonth() + 1;
+
+    const [calRes, routesRes] = await Promise.allSettled([
+      fetch(`/api/calendar?year=${calYear}&month=${calMonth}`),
+      isCurrentMonth ? fetch(`/api/routes?date=${todayIso}`) : Promise.resolve(null),
+    ]);
+
+    if (calRes.status === "rejected" || !calRes.value.ok) {
       grid.innerHTML = `<p style="padding:1rem;color:var(--danger);font-size:.82rem">Failed to load calendar.</p>`;
       return;
     }
 
-    renderGrid(data);
+    const data   = await calRes.value.json();
+    let todayDone = false;
+    if (routesRes.status === "fulfilled" && routesRes.value && routesRes.value.ok) {
+      const routes = await routesRes.value.json();
+      // Today is "done" when every route for today is Closed (and there is at least one)
+      if (Array.isArray(routes) && routes.length > 0) {
+        todayDone = routes.every(r => r.Status === "Closed");
+      }
+    }
+
+    renderGrid(data, todayIso, todayDone);
   }
 
-  function renderGrid(data) {
+  function renderGrid(data, today, todayDone) {
     const grid = document.getElementById("cal-grid");
-    const today = new Date().toISOString().slice(0, 10);
 
     // Day-of-week headers
     let html = DAY_HEADERS.map(d =>
@@ -159,10 +174,10 @@
 
       const isToday   = iso === today;
       const isWeekend = !area && !holiday;
-      const isPast    = iso < today;
+      const isPast    = iso < today || (isToday && todayDone);
 
       let classes = "cal-cell";
-      if (isToday)   classes += " cal-today";
+      if (isToday && !todayDone) classes += " cal-today";
       if (isPast)    classes += " cal-past";
       if (isWeekend) classes += " cal-weekend";
       if (holiday)   classes += " cal-holiday";
