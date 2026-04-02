@@ -25,6 +25,28 @@
     </p>
   </div>
 
+  <!-- ====== Route Calendar ====== -->
+  <section class="cal-section card">
+    <div class="cal-nav">
+      <button class="btn btn-ghost btn-sm" id="cal-prev">←</button>
+      <h3 id="cal-title" class="cal-month-title"></h3>
+      <button class="btn btn-ghost btn-sm" id="cal-next">→</button>
+    </div>
+    <div id="cal-grid" class="cal-grid">
+      <div class="cal-loading"><div class="spinner"></div></div>
+    </div>
+    <div class="cal-legend">
+      <span class="cal-legend-item"><span class="cal-dot area-monday"></span>Monday</span>
+      <span class="cal-legend-item"><span class="cal-dot area-tuesday"></span>Tuesday</span>
+      <span class="cal-legend-item"><span class="cal-dot area-thursday"></span>Thursday</span>
+      <span class="cal-legend-item"><span class="cal-dot area-friday"></span>Friday</span>
+      <span class="cal-legend-item"><span class="cal-dot status-full"></span>Full</span>
+      <span class="cal-legend-item"><span class="cal-dot status-limited"></span>Limited</span>
+      <span class="cal-legend-item"><span class="cal-dot status-cancelled"></span>Cancelled</span>
+    </div>
+  </section>
+
+  <!-- ====== Section cards ====== -->
   <div class="home-grid">
 
     <a href="/app" class="home-card">
@@ -57,6 +79,133 @@
   </div>
 
 </main>
+
+<script>
+(function () {
+  "use strict";
+
+  const AREA_SHORT = { Monday: "Mon", Tuesday: "Tue", Thursday: "Thu", Friday: "Fri" };
+  const MONTH_NAMES = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+  ];
+  const DAY_HEADERS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  let calYear, calMonth;
+
+  function initMonth() {
+    const now = new Date();
+    calYear  = now.getFullYear();
+    calMonth = now.getMonth() + 1; // 1-based
+  }
+
+  function updateTitle() {
+    document.getElementById("cal-title").textContent =
+      `${MONTH_NAMES[calMonth - 1]} ${calYear}`;
+  }
+
+  async function loadCalendar() {
+    updateTitle();
+    const grid = document.getElementById("cal-grid");
+    grid.innerHTML = '<div class="cal-loading"><div class="spinner"></div></div>';
+
+    let data;
+    try {
+      const res = await fetch(`/api/calendar?year=${calYear}&month=${calMonth}`);
+      if (!res.ok) throw new Error(res.statusText);
+      data = await res.json();
+    } catch (e) {
+      grid.innerHTML = `<p style="padding:1rem;color:var(--danger);font-size:.82rem">Failed to load calendar.</p>`;
+      return;
+    }
+
+    renderGrid(data);
+  }
+
+  function renderGrid(data) {
+    const grid = document.getElementById("cal-grid");
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Day-of-week headers
+    let html = DAY_HEADERS.map(d =>
+      `<div class="cal-header-cell">${d}</div>`
+    ).join("");
+
+    // Determine the first day of the month and pad with empty cells
+    // JS Date: 0=Sun…6=Sat; we want Mon=0…Sun=6
+    const firstDate = new Date(calYear, calMonth - 1, 1);
+    const firstDow  = (firstDate.getDay() + 6) % 7; // Mon-based offset
+    const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+
+    for (let pad = 0; pad < firstDow; pad++) {
+      html += `<div class="cal-cell cal-cell-empty"></div>`;
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso  = `${calYear}-${String(calMonth).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const info = data[iso] || {};
+      const { area, status, message, holiday } = info;
+
+      const isToday   = iso === today;
+      const isWeekend = !area && !holiday;
+      const isPast    = iso < today;
+
+      let classes = "cal-cell";
+      if (isToday)   classes += " cal-today";
+      if (isPast)    classes += " cal-past";
+      if (isWeekend) classes += " cal-weekend";
+      if (holiday)   classes += " cal-holiday";
+
+      let areaChip = "";
+      if (area) {
+        const areaClass = `area-${area.toLowerCase()}`;
+        const statusClass = (status && status !== "normal") ? ` status-${status}` : "";
+        const label = AREA_SHORT[area] || area;
+        areaChip = `<span class="cal-chip ${areaClass}${statusClass}" title="${escHtml(message || status)}">${label}</span>`;
+      } else if (holiday) {
+        areaChip = `<span class="cal-chip cal-chip-holiday" title="WA Public Holiday">Holiday</span>`;
+      }
+
+      const link = area ? `/app?date=${iso}` : null;
+      const inner = `
+        <span class="cal-day-num">${day}</span>
+        ${areaChip}
+      `;
+
+      if (link) {
+        html += `<a href="${link}" class="${classes}">${inner}</a>`;
+      } else {
+        html += `<div class="${classes}">${inner}</div>`;
+      }
+    }
+
+    grid.innerHTML = html;
+  }
+
+  function escHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  document.getElementById("cal-prev").addEventListener("click", () => {
+    calMonth--;
+    if (calMonth < 1) { calMonth = 12; calYear--; }
+    loadCalendar();
+  });
+
+  document.getElementById("cal-next").addEventListener("click", () => {
+    calMonth++;
+    if (calMonth > 12) { calMonth = 1; calYear++; }
+    loadCalendar();
+  });
+
+  initMonth();
+  loadCalendar();
+})();
+</script>
 
 </body>
 </html>

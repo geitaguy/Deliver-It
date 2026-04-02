@@ -314,6 +314,61 @@ def wa_holidays():
     return jsonify(delivery_data.wa_holidays_for_years(years))
 
 
+@app.route("/api/calendar")
+def calendar_data():
+    """
+    Return per-day delivery status for a given month.
+
+    Query params: ?year=YYYY&month=M  (defaults to current month)
+
+    Response: { "YYYY-MM-DD": { area, status, message, holiday } ... }
+      area    — canonical routing area that runs that day, or null
+      status  — "normal" | "full" | "limited" | "cancelled" | "rescheduled"
+      message — override message or null
+      holiday — true if it is a WA public holiday
+    """
+    import calendar as _cal
+    try:
+        today = date.today()
+        year  = int(request.args.get("year",  today.year))
+        month = int(request.args.get("month", today.month))
+        if not (1 <= month <= 12):
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Invalid year or month"}), 400
+
+    first_day = date(year, month, 1)
+    last_day  = date(year, month, _cal.monthrange(year, month)[1])
+
+    overrides = db.get_route_overrides(first_day.isoformat(), last_day.isoformat())
+    override_by_key = {(ov["date"], ov["routing_area"]): ov for ov in overrides}
+
+    days: dict[str, dict] = {}
+    d = first_day
+    while d <= last_day:
+        d_str   = d.isoformat()
+        area    = delivery_data.effective_routing_area(d)
+        holiday = delivery_data.is_wa_holiday(d)
+        status  = "normal"
+        message = None
+
+        if area:
+            ov = override_by_key.get((d_str, area))
+            if ov:
+                status  = ov["status"]
+                message = ov.get("message")
+
+        days[d_str] = {
+            "area":    area,
+            "status":  status,
+            "message": message,
+            "holiday": holiday,
+        }
+        d += timedelta(days=1)
+
+    return jsonify(days)
+
+
 # ---------------------------------------------------------------------------
 # JSON API — Route availability overrides
 # ---------------------------------------------------------------------------
