@@ -95,8 +95,26 @@
         apiFetch(`/api/orders?${params}`),
         apiFetch(`/api/routes?date=${routeDate}`),
       ]);
-      state.orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
-      state.routes = routesResult.status === "fulfilled" ? routesResult.value : [];
+      const routes = routesResult.status === "fulfilled" ? routesResult.value : [];
+      state.routes = routes;
+
+      // /Order/Date/{date} may return orders without RouteNumber set even when
+      // they are assigned. Patch it using the Orders arrays embedded in each route.
+      const orderRouteMap = {};
+      for (const r of routes) {
+        for (const o of (r.Orders || [])) {
+          const num = o.Number || o.Id;
+          if (num) orderRouteMap[num] = r.Code;
+        }
+      }
+      const rawOrders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
+      state.orders = rawOrders.map(o => {
+        const num = o.Number || o.Id;
+        if (!o.RouteNumber && num && orderRouteMap[num]) {
+          return { ...o, RouteNumber: orderRouteMap[num] };
+        }
+        return o;
+      });
       if (ordersResult.status === "rejected") toast(ordersResult.reason.message, "error");
     } finally {
       state.loading = false;
