@@ -1542,6 +1542,12 @@
     });
 
     loadOrders();
+
+    // Auto-open a panel if ?open= is in the URL (e.g. linked from homepage)
+    const openParam = new URLSearchParams(location.search).get("open");
+    if (openParam === "suburb-search" || openParam === "route-availability") {
+      openPanel(openParam);
+    }
   }
 
   if (document.readyState === "loading") {

@@ -545,6 +545,99 @@ tbody tr.is-next-stop { background: var(--bg); }
   padding-bottom: .4rem;
 }
 
+/* ---- Homepage ---- */
+
+.home-back {
+  font-size: 1.3rem;
+  text-decoration: none;
+  line-height: 1;
+  opacity: .9;
+  transition: opacity .15s;
+}
+.home-back:hover { opacity: 1; }
+
+.home-hero {
+  max-width: 600px;
+  margin: 2.5rem auto 2rem;
+  text-align: center;
+}
+
+.home-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -.4px;
+  margin-bottom: .6rem;
+}
+
+.home-desc {
+  font-size: .95rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  max-width: 900px;
+  margin: 0 auto 3rem;
+}
+
+.home-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: var(--text);
+  transition: box-shadow .15s, border-color .15s, transform .15s;
+}
+
+.home-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--brand);
+  transform: translateY(-2px);
+}
+
+.home-card-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: .1rem;
+}
+
+.home-card-body { flex: 1; }
+
+.home-card-body h3 {
+  font-size: .95rem;
+  font-weight: 700;
+  margin-bottom: .35rem;
+}
+
+.home-card-body p {
+  font-size: .82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.home-card-arrow {
+  font-size: 1rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  align-self: center;
+  transition: color .15s, transform .15s;
+}
+
+.home-card:hover .home-card-arrow {
+  color: var(--brand);
+  transform: translateX(3px);
+}
+
 /* ---- Filter nav ---- */
 
 .filter-nav {

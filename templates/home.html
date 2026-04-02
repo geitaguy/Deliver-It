@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deliver-It</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <span style="font-size:1.3rem">📦</span>
+    <h1>Deliver-It <span class="subtitle">powered by Track-POD</span></h1>
+  </div>
+</header>
+
+<main class="container">
+
+  <div class="home-hero">
+    <h2 class="home-title">Delivery Management</h2>
+    <p class="home-desc">
+      Deliver-It connects to Track-POD to help you manage customer orders,
+      plan delivery routes, and check suburb delivery schedules — all in one place.
+    </p>
+  </div>
+
+  <div class="home-grid">
+
+    <a href="/app" class="home-card">
+      <div class="home-card-icon">🗂</div>
+      <div class="home-card-body">
+        <h3>Orders</h3>
+        <p>View and manage delivery orders synced from Track-POD. Create new orders, assign them to routes, and track their progress through the delivery workflow.</p>
+      </div>
+      <span class="home-card-arrow">→</span>
+    </a>
+
+    <a href="/app?open=suburb-search" class="home-card">
+      <div class="home-card-icon">📍</div>
+      <div class="home-card-body">
+        <h3>Check Delivery</h3>
+        <p>Search by suburb name or postcode to find regular delivery days and the next available delivery date. Book a delivery slot directly from the results.</p>
+      </div>
+      <span class="home-card-arrow">→</span>
+    </a>
+
+    <a href="/app?open=route-availability" class="home-card">
+      <div class="home-card-icon">🗓</div>
+      <div class="home-card-body">
+        <h3>Route Availability</h3>
+        <p>Override scheduled delivery routes for operational changes — mark a day as full, cancelled, or limited capacity, and add a message to inform staff.</p>
+      </div>
+      <span class="home-card-arrow">→</span>
+    </a>
+
+  </div>
+
+</main>
+
+</body>
+</html>
