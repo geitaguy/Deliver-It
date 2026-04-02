@@ -11,6 +11,18 @@
   "use strict";
 
   // ----------------------------------------------------------------
+  // Routing area display labels
+  // Internal keys (Monday/Tuesday/Thursday/Friday) are kept as-is in the DB.
+  // ----------------------------------------------------------------
+
+  const AREA_LABELS = {
+    Monday:   "South & Mandurah",
+    Tuesday:  "North & Yanchep",
+    Thursday: "North & Hills",
+    Friday:   "South & Hills",
+  };
+
+  // ----------------------------------------------------------------
   // State
   // ----------------------------------------------------------------
 
@@ -885,13 +897,15 @@
   }
 
   function suburbResultHTML(s) {
-    const daysText   = s.delivery_days.length ? s.delivery_days.join(", ") : "No scheduled days";
+    const daysText   = s.delivery_days.length
+      ? s.delivery_days.map(d => AREA_LABELS[d] || d).join(", ")
+      : "No scheduled days";
     const fridayArea = s.delivery_days.includes("Friday");
     const monArea    = s.delivery_days.includes("Monday");
 
     const wedNote = (fridayArea || monArea)
       ? `<div style="font-size:.73rem;color:var(--text-muted);margin-top:.15rem">
-           Wednesday deliveries follow ${fridayArea ? "Friday" : "Monday"}'s route
+           Wednesday deliveries follow the ${fridayArea ? AREA_LABELS.Friday : AREA_LABELS.Monday} route
            ${monArea && !fridayArea ? "(or this Wednesday when Monday is a public holiday)" : ""}
          </div>` : "";
 
@@ -1005,7 +1019,7 @@
                 <div style="flex:1;min-width:0">
                   <div style="font-size:.82rem;font-weight:600">${escHtml(ov.date)}</div>
                   <div style="font-size:.78rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.15rem">
-                    <span style="font-weight:500">${escHtml(ov.routing_area)} area</span>
+                    <span style="font-weight:500">${escHtml(AREA_LABELS[ov.routing_area] || ov.routing_area)}</span>
                     <span class="badge" style="font-size:.68rem;${escAttr(statusStyle)}">
                       ${escHtml(STATUS_LABELS[ov.status] || ov.status)}
                     </span>
@@ -1033,10 +1047,10 @@
           <div class="form-group">
             <label>Routing Area</label>
             <select id="ov-area">
-              <option value="Monday">Monday</option>
-              <option value="Tuesday">Tuesday</option>
-              <option value="Thursday">Thursday</option>
-              <option value="Friday">Friday</option>
+              <option value="Monday">South &amp; Mandurah</option>
+              <option value="Tuesday">North &amp; Yanchep</option>
+              <option value="Thursday">North &amp; Hills</option>
+              <option value="Friday">South &amp; Hills</option>
             </select>
           </div>
           <div class="form-group">

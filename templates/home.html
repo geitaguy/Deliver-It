@@ -36,10 +36,10 @@
       <div class="cal-loading"><div class="spinner"></div></div>
     </div>
     <div class="cal-legend">
-      <span class="cal-legend-item"><span class="cal-dot area-monday"></span>Monday</span>
-      <span class="cal-legend-item"><span class="cal-dot area-tuesday"></span>Tuesday</span>
-      <span class="cal-legend-item"><span class="cal-dot area-thursday"></span>Thursday</span>
-      <span class="cal-legend-item"><span class="cal-dot area-friday"></span>Friday</span>
+      <span class="cal-legend-item"><span class="cal-dot area-monday"></span>South &amp; Mandurah</span>
+      <span class="cal-legend-item"><span class="cal-dot area-tuesday"></span>North &amp; Yanchep</span>
+      <span class="cal-legend-item"><span class="cal-dot area-thursday"></span>North &amp; Hills</span>
+      <span class="cal-legend-item"><span class="cal-dot area-friday"></span>South &amp; Hills</span>
       <span class="cal-legend-item"><span class="cal-dot status-full"></span>Full</span>
       <span class="cal-legend-item"><span class="cal-dot status-limited"></span>Limited</span>
       <span class="cal-legend-item"><span class="cal-dot status-cancelled"></span>Cancelled</span>
@@ -84,7 +84,18 @@
 (function () {
   "use strict";
 
-  const AREA_SHORT = { Monday: "Mon", Tuesday: "Tue", Thursday: "Thu", Friday: "Fri" };
+  const AREA_LABELS = {
+    Monday:   "South & Mandurah",
+    Tuesday:  "North & Yanchep",
+    Thursday: "North & Hills",
+    Friday:   "South & Hills",
+  };
+  const AREA_SHORT = {
+    Monday:   "S.Man",
+    Tuesday:  "N.Yan",
+    Thursday: "N.Hls",
+    Friday:   "S.Hls",
+  };
   const MONTH_NAMES = [
     "January","February","March","April","May","June",
     "July","August","September","October","November","December"
@@ -160,8 +171,10 @@
       if (area) {
         const areaClass = `area-${area.toLowerCase()}`;
         const statusClass = (status && status !== "normal") ? ` status-${status}` : "";
-        const label = AREA_SHORT[area] || area;
-        areaChip = `<span class="cal-chip ${areaClass}${statusClass}" title="${escHtml(message || status)}">${label}</span>`;
+        const label    = AREA_SHORT[area] || area;
+        const fullName = AREA_LABELS[area] || area;
+        const tipText  = message ? `${fullName} — ${message}` : fullName;
+        areaChip = `<span class="cal-chip ${areaClass}${statusClass}" title="${escHtml(tipText)}">${label}</span>`;
       } else if (holiday) {
         areaChip = `<span class="cal-chip cal-chip-holiday" title="WA Public Holiday">Holiday</span>`;
       }
