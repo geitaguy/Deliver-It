@@ -82,7 +82,7 @@ def effective_routing_area(d: date) -> str | None:
     """
     if d.weekday() >= 5 or is_wa_holiday(d):
         return None
-    day_name = _DAY_ORDER[d.weekday()]
+    day_name = DAY_ORDER[d.weekday()]
     if day_name == "Wednesday":
         monday = _week_monday(d)
         return "Monday" if is_wa_holiday(monday) else "Friday"
