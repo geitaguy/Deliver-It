@@ -54,6 +54,14 @@ class TrackPodClient:
         result = self._request("GET", f"/Order/Date/{order_date}")
         return result if isinstance(result, list) else []
 
+    def get_orders_by_route_date(self, route_date: str) -> list:
+        """
+        Return all orders assigned to routes on a given date (yyyy-MM-dd).
+        Uses GET /Order/Route/Date/{date}. These orders always have RouteNumber set.
+        """
+        result = self._request("GET", f"/Order/Route/Date/{route_date}")
+        return result if isinstance(result, list) else []
+
     def get_orders_for_range(self, date_from: str, date_to: str) -> list:
         """
         Fetch orders across a date range by iterating daily (max 31 days).

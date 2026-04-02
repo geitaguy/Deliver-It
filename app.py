@@ -85,9 +85,15 @@ def list_orders():
       date        YYYY-MM-DD  (single day; defaults to today if omitted)
       date_from   YYYY-MM-DD  (used together for a range)
       date_to     YYYY-MM-DD  (used together for a range)
-    """
-    client = _client()
 
+    For single-day requests, also fetches /Order/Route/Date/{date} in parallel
+    and uses it to patch RouteNumber onto orders that are missing it — the
+    /Order/Date/{date} endpoint does not always populate RouteNumber even when
+    an order is assigned to a route.
+    """
+    import concurrent.futures
+
+    client    = _client()
     date_from = request.args.get("date_from")
     date_to   = request.args.get("date_to")
     single    = request.args.get("date")
@@ -95,16 +101,37 @@ def list_orders():
     try:
         if date_from and date_to:
             orders = client.get_orders_for_range(date_from, date_to)
+            route_orders = []
         elif date_from:
             orders = client.get_orders_by_date(date_from)
+            route_orders = []
         elif date_to:
             orders = client.get_orders_by_date(date_to)
-        elif single:
-            orders = client.get_orders_by_date(single)
+            route_orders = []
         else:
-            orders = client.get_orders_by_date(date.today().isoformat())
+            target = single or date.today().isoformat()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                f_orders = pool.submit(client.get_orders_by_date, target)
+                f_route  = pool.submit(client.get_orders_by_route_date, target)
+                orders       = f_orders.result()
+                try:
+                    route_orders = f_route.result()
+                except TrackPodError:
+                    route_orders = []
     except TrackPodError as exc:
         return jsonify({"error": exc.message}), exc.status_code
+
+    # Build RouteNumber map from route-date orders (these always have it set)
+    route_num_map = {
+        o["Number"]: o["RouteNumber"]
+        for o in route_orders
+        if o.get("Number") and o.get("RouteNumber")
+    }
+    if route_num_map:
+        orders = [
+            {**o, "RouteNumber": route_num_map.get(o.get("Number"), o.get("RouteNumber"))}
+            for o in orders
+        ]
 
     order_numbers = [o.get("Number", "") for o in orders if o.get("Number")]
     db.mark_orders_seen(order_numbers)
