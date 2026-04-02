@@ -379,6 +379,28 @@ def _build_calendar(year: int, month: int) -> dict:
     return days
 
 
+@app.route("/api/debug/orders")
+def debug_orders():
+    """Temporary: show raw RouteNumber values from both order endpoints for a date."""
+    target = request.args.get("date", date.today().isoformat())
+    client = _client()
+    try:
+        by_date  = client.get_orders_by_date(target)
+        by_route = client.get_orders_by_route_date(target)
+    except TrackPodError as exc:
+        return jsonify({"error": exc.message}), exc.status_code
+    return jsonify({
+        "by_date": [
+            {"Number": o.get("Number"), "RouteNumber": o.get("RouteNumber"), "Status": o.get("Status")}
+            for o in by_date[:10]
+        ],
+        "by_route_date": [
+            {"Number": o.get("Number"), "RouteNumber": o.get("RouteNumber"), "Status": o.get("Status")}
+            for o in by_route[:10]
+        ],
+    })
+
+
 @app.route("/api/calendar")
 def calendar_data():
     """
