@@ -314,29 +314,13 @@ def wa_holidays():
     return jsonify(delivery_data.wa_holidays_for_years(years))
 
 
-@app.route("/api/calendar")
-def calendar_data():
-    """
-    Return per-day delivery status for a given month.
+# (year, month) -> (cached_at: float, payload: dict)
+_calendar_cache: dict[tuple[int, int], tuple[float, dict]] = {}
+_CALENDAR_TTL = 1800  # 30 minutes
 
-    Query params: ?year=YYYY&month=M  (defaults to current month)
 
-    Response: { "YYYY-MM-DD": { area, status, message, holiday } ... }
-      area    — canonical routing area that runs that day, or null
-      status  — "normal" | "full" | "limited" | "cancelled" | "rescheduled"
-      message — override message or null
-      holiday — true if it is a WA public holiday
-    """
+def _build_calendar(year: int, month: int) -> dict:
     import calendar as _cal
-    try:
-        today = date.today()
-        year  = int(request.args.get("year",  today.year))
-        month = int(request.args.get("month", today.month))
-        if not (1 <= month <= 12):
-            raise ValueError
-    except ValueError:
-        return jsonify({"error": "Invalid year or month"}), 400
-
     first_day = date(year, month, 1)
     last_day  = date(year, month, _cal.monthrange(year, month)[1])
 
@@ -365,8 +349,44 @@ def calendar_data():
             "holiday": holiday,
         }
         d += timedelta(days=1)
+    return days
 
-    return jsonify(days)
+
+@app.route("/api/calendar")
+def calendar_data():
+    """
+    Return per-day delivery status for a given month.
+
+    Query params:
+      ?year=YYYY&month=M  (defaults to current month)
+      ?refresh=1          (bust the cache and recompute)
+
+    Response: { "YYYY-MM-DD": { area, status, message, holiday } ... }
+      area    — canonical routing area that runs that day, or null
+      status  — "normal" | "full" | "limited" | "cancelled" | "rescheduled"
+      message — override message or null
+      holiday — true if it is a WA public holiday
+    """
+    import time
+    try:
+        today = date.today()
+        year  = int(request.args.get("year",  today.year))
+        month = int(request.args.get("month", today.month))
+        if not (1 <= month <= 12):
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Invalid year or month"}), 400
+
+    force = request.args.get("refresh") == "1"
+    key   = (year, month)
+    now   = time.monotonic()
+
+    cached_at, payload = _calendar_cache.get(key, (0, None))
+    if force or payload is None or (now - cached_at) > _CALENDAR_TTL:
+        payload = _build_calendar(year, month)
+        _calendar_cache[key] = (now, payload)
+
+    return jsonify(payload)
 
 
 # ---------------------------------------------------------------------------

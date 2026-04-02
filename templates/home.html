@@ -31,6 +31,7 @@
       <button class="btn btn-ghost btn-sm" id="cal-prev">←</button>
       <h3 id="cal-title" class="cal-month-title"></h3>
       <button class="btn btn-ghost btn-sm" id="cal-next">→</button>
+      <button class="btn btn-ghost btn-sm" id="cal-refresh" title="Refresh calendar data">↻</button>
     </div>
     <div id="cal-grid" class="cal-grid">
       <div class="cal-loading"><div class="spinner"></div></div>
@@ -115,32 +116,36 @@
       `${MONTH_NAMES[calMonth - 1]} ${calYear}`;
   }
 
-  async function loadCalendar() {
+  async function loadCalendar(forceRefresh = false) {
     updateTitle();
-    const grid = document.getElementById("cal-grid");
-    grid.innerHTML = '<div class="cal-loading"><div class="spinner"></div></div>';
+    const grid        = document.getElementById("cal-grid");
+    const refreshBtn  = document.getElementById("cal-refresh");
+    grid.innerHTML    = '<div class="cal-loading"><div class="spinner"></div></div>';
+    refreshBtn.classList.add("spinning");
 
     const todayIso = new Date().toISOString().slice(0, 10);
-
-    // Fetch calendar data and (for the current month) today's routes in parallel
     const isCurrentMonth = calYear === new Date().getFullYear()
                         && calMonth === new Date().getMonth() + 1;
 
+    const calUrl = `/api/calendar?year=${calYear}&month=${calMonth}`
+                 + (forceRefresh ? "&refresh=1" : "");
+
     const [calRes, routesRes] = await Promise.allSettled([
-      fetch(`/api/calendar?year=${calYear}&month=${calMonth}`),
+      fetch(calUrl),
       isCurrentMonth ? fetch(`/api/routes?date=${todayIso}`) : Promise.resolve(null),
     ]);
+
+    refreshBtn.classList.remove("spinning");
 
     if (calRes.status === "rejected" || !calRes.value.ok) {
       grid.innerHTML = `<p style="padding:1rem;color:var(--danger);font-size:.82rem">Failed to load calendar.</p>`;
       return;
     }
 
-    const data   = await calRes.value.json();
+    const data = await calRes.value.json();
     let todayDone = false;
     if (routesRes.status === "fulfilled" && routesRes.value && routesRes.value.ok) {
       const routes = await routesRes.value.json();
-      // Today is "done" when every route for today is Closed (and there is at least one)
       if (Array.isArray(routes) && routes.length > 0) {
         todayDone = routes.every(r => r.Status === "Closed");
       }
@@ -230,8 +235,20 @@
     loadCalendar();
   });
 
+  document.getElementById("cal-refresh").addEventListener("click", () => {
+    loadCalendar(true);
+  });
+
   initMonth();
   loadCalendar();
+
+  // Auto-refresh the current month every 30 minutes
+  setInterval(() => {
+    const now = new Date();
+    if (calYear === now.getFullYear() && calMonth === now.getMonth() + 1) {
+      loadCalendar(true);
+    }
+  }, 30 * 60 * 1000);
 })();
 </script>
 

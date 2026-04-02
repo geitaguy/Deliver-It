@@ -551,6 +551,8 @@ tbody tr.is-next-stop { background: var(--bg); }
   margin-bottom: 1.5rem;
 }
 
+#cal-refresh.spinning { animation: spin .7s linear infinite; }
+
 .cal-nav {
   display: flex;
   align-items: center;
