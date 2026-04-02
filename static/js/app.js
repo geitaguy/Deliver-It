@@ -1487,10 +1487,15 @@
   // ----------------------------------------------------------------
 
   function init() {
-    // Initialise date pickers to today
-    $("#filter-date").value = today;
-    $("#filter-from").value = today;
-    $("#filter-to").value   = today;
+    // Initialise date pickers — use ?date= from URL if present (e.g. linked from calendar)
+    const urlDate = new URLSearchParams(location.search).get("date");
+    const initDate = urlDate || today;
+    $("#filter-date").value = initDate;
+    $("#filter-from").value = initDate;
+    $("#filter-to").value   = initDate;
+    state.query.date      = initDate;
+    state.query.date_from = initDate;
+    state.query.date_to   = initDate;
 
     // Mode switch
     $("#filter-mode").addEventListener("change", function () {
