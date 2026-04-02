@@ -132,16 +132,18 @@
   // Render order table
   // ----------------------------------------------------------------
 
-  function statusCategory(status = "") {
+  function statusCategory(status = "", routeNumber = "") {
     const s = status.toLowerCase();
     if (s.includes("deliver") || s.includes("complet") || s.includes("collect")) return "completed";
-    if (s.includes("progress") || s.includes("transit") || s.includes("route") || s.includes("assign")) return "progress";
+    if (s.includes("progress") || s.includes("transit") || s.includes("route") || s.includes("assign") || s.includes("schedul") || s.includes("load")) return "progress";
     if (s.includes("fail") || s.includes("cancel") || s.includes("reject") || s.includes("not")) return "failed";
+    // Blank status on an order that has a route = scheduled/assigned
+    if (!s && routeNumber) return "progress";
     return "unassigned";
   }
 
-  function statusBadgeClass(status = "") {
-    const cat = statusCategory(status);
+  function statusBadgeClass(status = "", routeNumber = "") {
+    const cat = statusCategory(status, routeNumber);
     if (cat === "completed") return "badge-delivered";
     if (cat === "progress")  return "badge-progress";
     if (cat === "failed")    return "badge-failed";
@@ -170,7 +172,7 @@
     const client = o.Client || "—";
     const addr   = o.Address || "—";
     const dt     = formatDate(o.Date || o.RouteDate || "");
-    const status = o.Status || "Unassigned";
+    const status = o.Status || (o.RouteNumber ? "Scheduled" : "Unassigned");
     const isNew  = o._new;
 
     const rowClass = [
@@ -196,7 +198,7 @@
       <td>${escHtml(client)}</td>
       <td>${escHtml(addr)}</td>
       <td>${escHtml(dt)}</td>
-      <td><span class="badge ${statusBadgeClass(status)}">${escHtml(status)}</span></td>
+      <td><span class="badge ${statusBadgeClass(status, o.RouteNumber || "")}">${escHtml(status)}</span></td>
       <td>${lastCell}</td>
     </tr>`;
   }
@@ -206,7 +208,7 @@
     // and the next stop (second non-done order). Returns a Map of order key → label.
     const sorted = [...orders].sort((a, b) => (a.SeqNumber ?? 9999) - (b.SeqNumber ?? 9999));
     const pending = sorted.filter(o => {
-      const cat = statusCategory(o.Status || "");
+      const cat = statusCategory(o.Status || "", o.RouteNumber || "");
       return cat !== "completed" && cat !== "failed";
     });
     const map = new Map();
@@ -283,7 +285,7 @@
 
     const visible = state.statusFilter === "all"
       ? state.orders
-      : state.orders.filter(o => statusCategory(o.Status || "") === state.statusFilter);
+      : state.orders.filter(o => statusCategory(o.Status || "", o.RouteNumber || "") === state.statusFilter);
 
     if (!visible.length) {
       tbody.innerHTML = "";
@@ -552,7 +554,7 @@
     if (routeStatus === "InProgress") {
       const pendingStops = stops.filter(s =>
         s.orders.some(o => {
-          const cat = statusCategory(o.Status || "");
+          const cat = statusCategory(o.Status || "", o.RouteNumber || "");
           return cat !== "completed" && cat !== "failed";
         })
       );
